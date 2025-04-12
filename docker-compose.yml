@@ -1,0 +1,21 @@
+version: '3'
+
+services:
+  reflex-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    volumes:
+      - .:/app
+  #    environment:
+  #      - OPENAI_BASE_URL=
+  #      - OPENAI_API_KEY=
+
+  reflex-frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile-nginx
+    restart: always
+    ports:
+      - 8080:80

@@ -1,0 +1,6 @@
+.states
+.web
+.idea
+__pycache__/
+.env
+*.zip
