@@ -2,6 +2,7 @@ version: '3'
 
 services:
   reflex-backend:
+    #    image: ghcr.io/luler/reflex_ai_fast-api:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,6 +14,7 @@ services:
   #      - OPENAI_API_KEY=
 
   reflex-frontend:
+    #    image: ghcr.io/luler/reflex_ai_fast-api:latest
     build:
       context: .
       dockerfile: Dockerfile-nginx
