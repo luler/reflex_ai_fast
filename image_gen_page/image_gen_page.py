@@ -137,7 +137,7 @@ def index():
                 value=State.prompt,
                 placeholder="请输入提示词",
                 on_change=State.set_prompt,
-                width=["90%", "25em"],
+                width=["20em", "25em"],
                 rows='5',
                 resize='vertical',
             ),
@@ -145,13 +145,13 @@ def index():
                 State.size_options,
                 value=State.size,
                 on_change=State.set_size,
-                width=["90%", "28.5em"],
+                width=["23em", "28.5em"],
                 placeholder="选择图片尺寸",
             ),
             rx.button(
                 "生成图片",
                 on_click=State.get_image,
-                width=["90%", "28.5em"],
+                width=["23em", "28.5em"],
                 loading=State.processing
             ),
             rx.cond(
