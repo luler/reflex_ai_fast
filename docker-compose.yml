@@ -14,7 +14,7 @@ services:
   #      - OPENAI_API_KEY=
 
   reflex-frontend:
-    #    image: ghcr.io/luler/reflex_ai_fast-api:latest
+    #    image: ghcr.io/luler/reflex_ai_fast-web:latest
     build:
       context: .
       dockerfile: Dockerfile-nginx

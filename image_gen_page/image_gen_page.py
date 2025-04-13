@@ -34,6 +34,9 @@ class State(rx.State):
     def set_size(self, size: str):
         self.size = size
 
+    def set_prompt(self, prompt: str):
+        self.prompt = prompt
+
     def get_image(self):
         """调用大模型生成图片."""
         if self.prompt == "":
@@ -86,50 +89,98 @@ class State(rx.State):
           """)
 
 
+def image_modal(image_url):
+    return rx.dialog.root(
+        rx.dialog.trigger(
+            rx.image(
+                src=image_url,
+                width="20em",
+                height="20em",
+                object_fit="cover",
+                cursor="pointer",  # 鼠标悬停时显示手型光标
+            )
+        ),
+        rx.dialog.content(
+            rx.image(
+                src=image_url,
+                width="100%",  # 弹窗中的大图
+                height="auto",
+            ),
+            rx.flex(  # 使用flex容器来居中按钮
+                rx.dialog.close(
+                    rx.button(
+                        "关闭",
+                        variant="soft",
+                        color_scheme="gray",
+                    ),
+                ),
+                margin_top="1em",  # 上间距
+                # margin_bottom="1em",  # 下间距
+                justify="center",  # 水平居中
+                width="100%",  # 宽度100%确保居中效果
+            ),
+            spacing="4",  # vstack的组件间距
+        ),
+    )
+
+
 def index():
     return rx.center(
         rx.vstack(
-            rx.heading("智能提示词图片生成器（jimeng-3.0）", font_size="1.5em"),
+            rx.heading(
+                "智能提示词图片生成器（jimeng-3.0）",
+                font_size=["1.2em", "1.5em"],
+                text_align="center",
+                width="100%"
+            ),
             rx.text_area(
+                value=State.prompt,
                 placeholder="请输入提示词",
-                on_blur=State.set_prompt,
-                width="25em",
+                on_change=State.set_prompt,
+                width=["90%", "25em"],
                 rows='5',
+                resize='vertical',
             ),
             rx.select(
                 State.size_options,
                 value=State.size,
                 on_change=State.set_size,
-                width="28.5em",
+                width=["90%", "28.5em"],
                 placeholder="选择图片尺寸",
             ),
             rx.button(
                 "生成图片",
                 on_click=State.get_image,
-                width="28.5em",
+                width=["90%", "28.5em"],
                 loading=State.processing
             ),
             rx.cond(
                 State.complete,
-                rx.hstack(
+                rx.flex(
                     rx.foreach(
                         State.image_urls,
                         lambda url: rx.vstack(
-                            rx.image(src=url, width="20em", height="20em", ),
+                            image_modal(url),
                             rx.button(
                                 "下载图片",
                                 width="20em",
+                                cursor="pointer",
                                 on_click=State.download_image(url)
                             ),
                             align='center',
                         ),
-                    )
+                    ),
+                    margin_top="1em",
+                    wrap='wrap',
+                    justify="center",
+                    gap="2em",
                 )
             ),
             align="center",
         ),
         width="100%",
-        height="100vh",
+        height="100%",
+        padding_y="2em",
     )
 
 
