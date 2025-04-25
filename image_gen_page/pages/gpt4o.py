@@ -29,14 +29,16 @@ class Gpt4oState(rx.State):
     def set_prompt(self, prompt: str):
         self.prompt = prompt
 
-    def get_image(self):
-        """调用大模型生成图片."""
-        if self.prompt == "":
-            return rx.window_alert("提示词不能为空！")
+    @rx.event(background=True)
+    async def get_image(self):
+        async with self:
+            if self.prompt == "":
+                yield rx.window_alert("提示词不能为空！")
+                return
 
-        self.processing, self.complete = True, False
-        try:
+            self.processing, self.complete = True, False
             yield
+        try:
             size = self.size.split('x')
             width = int(size[0])
             height = int(size[1])
@@ -54,14 +56,15 @@ class Gpt4oState(rx.State):
                                      })
             if response.status_code == 200:
                 data = response.json()
-                self.image_urls = [item["url"] for item in data["data"]]
+                async with self:
+                    self.image_urls = [item["url"] for item in data["data"]]
             else:
-                yield rx.window_alert("图片生成失败！异常原因：" + response.status_code + '-' + response.text)
+                yield rx.window_alert("图片生成失败！异常原因：" + str(response.status_code) + '-' + response.text)
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
-        # 延迟状态更新
-        yield self.setvar("processing", False)
-        yield self.setvar("complete", True)
+        async with self:
+            self.processing = False
+            self.complete = True
 
     def download_image(self, url: str):
         """下载指定URL的图片"""
