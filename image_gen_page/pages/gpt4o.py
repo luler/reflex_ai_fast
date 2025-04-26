@@ -1,8 +1,8 @@
 # 加载配置
 import os
 
+import aiohttp  # 替换 requests 为 aiohttp
 import reflex as rx
-import requests
 
 openai_base_url = os.getenv('OPENAI_BASE_URL')
 openai_api_key = os.getenv('OPENAI_API_KEY')
@@ -39,29 +39,35 @@ class Gpt4oState(rx.State):
 
             self.processing, self.complete = True, False
             yield
-        try:
-            size = self.size.split('x')
-            width = int(size[0])
-            height = int(size[1])
-            response = requests.post(openai_base_url + '/images/generations',
-                                     json={
-                                         "model": default_model,
-                                         'prompt': self.prompt,
-                                         'size': f"{width}x{height}",
-                                         'n': 1,
-                                     },
-                                     headers={
-                                         'Content-Type': 'application/json',
-                                         'Authorization': 'Bearer ' + openai_api_key
-                                     })
-            if response.status_code == 200:
-                data = response.json()
-                async with self:
-                    self.image_urls = [item["url"] for item in data["data"]]
-            else:
-                yield rx.window_alert("图片生成失败！异常原因：" + str(response.status_code) + '-' + response.text)
-        except Exception as e:
-            yield rx.window_alert("图片生成失败！异常原因：" + str(e))
+
+        async with aiohttp.ClientSession() as session:
+            try:
+                size = self.size.split('x')
+                width = int(size[0])
+                height = int(size[1])
+                async with session.post(
+                        openai_base_url + '/images/generations',
+                        json={
+                            "model": default_model,
+                            'prompt': self.prompt,
+                            'size': f"{width}x{height}",
+                            'n': 1,
+                        },
+                        headers={
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + openai_api_key
+                        }
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        async with self:
+                            self.image_urls = [item["url"] for item in data["data"]]
+                    else:
+                        error_text = await response.text()
+                        yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
+            except Exception as e:
+                yield rx.window_alert("图片生成失败！异常原因：" + str(e))
+
         async with self:
             self.processing = False
             self.complete = True
