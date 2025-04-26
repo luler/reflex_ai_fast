@@ -6,6 +6,7 @@ import requests
 
 openai_base_url = os.getenv('OPENAI_BASE_URL')
 openai_api_key = os.getenv('OPENAI_API_KEY')
+default_model = os.getenv('JIMENG_MODEL', 'jimeng-3.0')
 
 
 class JimengState(rx.State):
@@ -47,7 +48,7 @@ class JimengState(rx.State):
             height = int(size[1])
             response = requests.post(openai_base_url + '/images/generations',
                                      json={
-                                         "model": "jimeng-3.0",
+                                         "model": default_model,
                                          'prompt': self.prompt,
                                          'height': height,
                                          'width': width,

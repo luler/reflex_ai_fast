@@ -6,6 +6,7 @@ import requests
 
 openai_base_url = os.getenv('OPENAI_BASE_URL')
 openai_api_key = os.getenv('OPENAI_API_KEY')
+default_model = os.getenv('GPT4O_MODEL', 'gpt-4o-image')
 
 
 class Gpt4oState(rx.State):
@@ -44,10 +45,9 @@ class Gpt4oState(rx.State):
             height = int(size[1])
             response = requests.post(openai_base_url + '/images/generations',
                                      json={
-                                         "model": "gpt-image-1",
+                                         "model": default_model,
                                          'prompt': self.prompt,
-                                         'height': height,
-                                         'width': width,
+                                         'size': f"{width}x{height}",
                                          'n': 1,
                                      },
                                      headers={
