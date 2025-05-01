@@ -118,9 +118,10 @@ class PageState(rx.State):
                     file = requests.post(screen_base_url + '/screenshot', {
                         "url": first_html_block,
                         "viewport_width": 1920,
-                        "viewport_height": 1920,
+                        "viewport_height": 1600,
                         "element_selector": "#maincover",
                         "wait_second": 3,
+                        "use_proxy": 1,
                     })
                     image_base64 = base64.b64encode(file.content).decode('utf-8')
                     image_urls.append(f"data:image/png;base64,{image_base64}")
