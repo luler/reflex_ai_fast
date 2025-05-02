@@ -229,67 +229,101 @@ def image_modal(image_url):
 
 
 def index():
-    return rx.center(
-        rx.vstack(
-            rx.heading(
-                "文章封面图生成器（AI大模型助力）",
-                font_size=["1.2em", "1.5em"],
-                text_align="center",
-                width="100%"
+    return rx.vstack(
+        # 上方内容（生成器交互部分）
+        rx.center(
+            rx.vstack(
+                rx.heading(
+                    "文章封面图生成器（AI大模型助力）",
+                    font_size=["1.2em", "1.5em"],
+                    text_align="center",
+                    width="100%"
+                ),
+                rx.text_area(
+                    value=PageState.prompt,
+                    placeholder="请输入文章标题或主题内容",
+                    on_change=PageState.set_prompt,
+                    width=["20em", "25em"],
+                    rows='5',
+                    resize='vertical',
+                ),
+                rx.select(
+                    PageState.size_options,
+                    value=PageState.size,
+                    on_change=PageState.set_size,
+                    width=["23em", "28.5em"],
+                    placeholder="选择图片尺寸",
+                ),
+                rx.select(
+                    PageState.style_options,
+                    value=PageState.style,
+                    on_change=PageState.set_style,
+                    width=["23em", "28.5em"],
+                    placeholder="选择图片风格",
+                ),
+                rx.button(
+                    "生成图片",
+                    on_click=PageState.get_image,
+                    width=["23em", "28.5em"],
+                    loading=PageState.processing
+                ),
+                rx.cond(
+                    PageState.complete,
+                    rx.flex(
+                        rx.foreach(
+                            PageState.image_urls,
+                            lambda url: rx.vstack(
+                                image_modal(url),
+                                rx.button(
+                                    "下载图片",
+                                    width="20em",
+                                    cursor="pointer",
+                                    on_click=PageState.download_image(url)
+                                ),
+                                align='center',
+                            ),
+                        ),
+                        margin_top="1em",
+                        wrap='wrap',
+                        justify="center",
+                        gap="2em",
+                    )
+                ),
+                align="center",
             ),
-            rx.text_area(
-                value=PageState.prompt,
-                placeholder="请输入文章标题或主题内容",
-                on_change=PageState.set_prompt,
-                width=["20em", "25em"],
-                rows='5',
-                resize='vertical',
-            ),
-            rx.select(
-                PageState.size_options,
-                value=PageState.size,
-                on_change=PageState.set_size,
-                width=["23em", "28.5em"],
-                placeholder="选择图片尺寸",
-            ),
-            rx.select(
-                PageState.style_options,
-                value=PageState.style,
-                on_change=PageState.set_style,
-                width=["23em", "28.5em"],
-                placeholder="选择图片风格",
-            ),
-            rx.button(
-                "生成图片",
-                on_click=PageState.get_image,
-                width=["23em", "28.5em"],
-                loading=PageState.processing
-            ),
-            rx.cond(
-                PageState.complete,
+            width="100%",
+        ),
+
+        # 空白区域填充，确保示例图片在底部
+        rx.spacer(),
+
+        # 示例图片部分（始终保持在底部）
+        rx.box(
+            rx.vstack(
+                rx.divider(margin_y="1em"),
+                rx.heading(
+                    "效果示例",
+                    font_size="lg",
+                    margin_bottom="1em",
+                ),
                 rx.flex(
                     rx.foreach(
-                        PageState.image_urls,
-                        lambda url: rx.vstack(
-                            image_modal(url),
-                            rx.button(
-                                "下载图片",
-                                width="20em",
-                                cursor="pointer",
-                                on_click=PageState.download_image(url)
-                            ),
-                            align='center',
-                        ),
+                        ["/images/cover/1.png", "/images/cover/2.png", "/images/cover/3.png", "/images/cover/4.png",
+                         "/images/cover/5.png", "/images/cover/6.png", "/images/cover/7.png", "/images/cover/8.png",
+                         "/images/cover/9.png", "/images/cover/10.png", ],
+                        lambda url: image_modal(url),
                     ),
-                    margin_top="1em",
-                    wrap='wrap',
+                    wrap="wrap",
                     justify="center",
                     gap="2em",
-                )
+                ),
+                align="center",
             ),
-            align="center",
+            width="100%",
         ),
+
+        # 整体布局设置
         width="100%",
-        height="100%",
+        min_height="100vh",  # 确保高度至少填满屏幕
         padding_y="2em",
     )
