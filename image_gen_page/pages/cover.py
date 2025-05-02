@@ -176,14 +176,21 @@ async def fetch_image(session, content):
 
 
 def extract_first_html_code_block(text):
-    # 使用非贪婪匹配和DOTALL标志来匹配多行内容
-    pattern = r"```html\s+(.*?)```"
-    match = re.search(pattern, text, re.DOTALL)
+    # 优先匹配包含<!DOCTYPE html>的完整HTML代码块
+    doctype_pattern = r"<!DOCTYPE html>.*?<html.*?>.*?</html>"
+    match = re.search(doctype_pattern, text, re.DOTALL | re.IGNORECASE)
 
     if match:
-        return match.group(1)  # 返回第一个捕获组
-    else:
-        return None  # 如果没有匹配项，返回None
+        return match.group(0)  # 返回匹配的完整HTML代码
+
+    # 如果没有<!DOCTYPE html>，匹配<html>到</html>的完整HTML代码块
+    html_pattern = r"<html.*?>.*?</html>"
+    match = re.search(html_pattern, text, re.DOTALL | re.IGNORECASE)
+
+    if match:
+        return match.group(0)  # 返回匹配的完整HTML代码
+
+    return None  # 如果没有匹配项，返回None
 
 
 def image_modal(image_url):
