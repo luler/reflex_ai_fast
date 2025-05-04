@@ -10,18 +10,37 @@ import requests
 
 openai_base_url = os.getenv('COVER_OPENAI_BASE_URL', os.getenv('OPENAI_BASE_URL'))
 openai_api_key = os.getenv('COVER_OPENAI_API_KEY', os.getenv('OPENAI_API_KEY'))
-default_model = os.getenv('COVER_MODEL', 'deepseek-v3-250324')
+cover_model = os.getenv('COVER_MODEL', '')
 screen_base_url = os.getenv('SCREEN_BASE_URL', 'http://10.8.0.2:14140')
-cover_count = int(os.getenv('COVER_COUNT', 2))
+cover_count = os.getenv('COVER_COUNT', '1')
 
 
 class PageState(rx.State):
     """The app state."""
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        cover_models = cover_model.split(',') if cover_model else []
+        cover_counts = cover_count.split(',')
+        for index, model in enumerate(cover_models):
+            count = int(cover_counts[index]) if index < len(cover_counts) else 1
+            self.cover_counts_dict[model] = count
+
+        if cover_models:
+            self.model = cover_models[0]
+            self.model_options = cover_models
+
     prompt = ""
     image_urls = []
     processing = False
     complete = False
+
+    cover_counts_dict = {}
+    model = ""  # 默认尺寸
+    model_options = []
+
+    def set_model(self, model: str):
+        self.model = model
 
     size = "1024x576x(16:9)"  # 默认尺寸
     size_options = [
@@ -103,9 +122,12 @@ class PageState(rx.State):
 - 只需要返回一个设计后的html代码，里面包含完整HTML、JS、CSS代码内容，页面元素不要交互和动画效果，浏览器打开页面渲染完就是最终的静态效果
 - 封面图应该放在id=maincover的标签中，以便于我后续截图这个标签的内容作为封面图
                 """
-
-                # 并发执行两次请求
-                tasks = [fetch_image(session, content) for _ in range(cover_count)]
+                # 模型校验
+                if self.model not in self.model_options:
+                    raise Exception('模型不存在')
+                count = self.cover_counts_dict[self.model]
+                # 并发执行多次请求
+                tasks = [fetch_image(session, self.model, content) for _ in range(count)]
                 results = await asyncio.gather(*tasks, return_exceptions=True)
 
                 image_urls = []
@@ -154,11 +176,11 @@ class PageState(rx.State):
           """)
 
 
-async def fetch_image(session, content):
+async def fetch_image(session, model, content):
     async with session.post(
             openai_base_url + '/chat/completions',
             json={
-                "model": default_model,
+                "model": model,
                 "messages": [{"role": "user", "content": content}],
                 "stream": False
             },
@@ -260,6 +282,13 @@ def index():
                     on_change=PageState.set_style,
                     width=["23em", "28.5em"],
                     placeholder="选择图片风格",
+                ),
+                rx.select(
+                    PageState.model_options,
+                    value=PageState.model,
+                    on_change=PageState.set_model,
+                    width=["23em", "28.5em"],
+                    placeholder="选择大语言模型",
                 ),
                 rx.button(
                     "生成图片",
