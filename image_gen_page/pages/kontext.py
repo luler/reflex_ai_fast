@@ -10,8 +10,6 @@ from googletrans import Translator
 
 fal_key = os.getenv('FAL_KEY')
 
-os.environ["no_proxy"] = "localhost,127.0.0.1,::1"
-
 
 class KontextState(rx.State):
     """The app state."""
