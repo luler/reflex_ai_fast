@@ -68,7 +68,7 @@ class KontextState(rx.State):
         try:
             yield
             prompt = translate(self.prompt)
-            print(prompt)
+            print(self.prompt + ' => ' + prompt)
             param = {
                 'prompt': prompt,
                 'image_url': self.image_to_base64(),
@@ -143,8 +143,8 @@ def image_modal(image_url):
         rx.dialog.trigger(
             rx.image(
                 src=image_url,
-                width="20em",
-                height="20em",
+                width="25em",  # 缩略图宽度
+                # height="20em",
                 object_fit="cover",
                 cursor="pointer",  # 鼠标悬停时显示手型光标
             )
@@ -191,10 +191,8 @@ def index():
                             width="100%",
                             height="100%",
                             style={
-                                "objectFit": "cover",
+                                "objectFit": "contain",
                                 "display": "block",
-                                "margin": 0,
-                                "padding": 0,
                             },
                         ),
                         rx.text(
@@ -205,6 +203,14 @@ def index():
                             },
                         ),
                     ),
+                    style={
+                        "width": "100%",
+                        "height": "100%",
+                        "overflow": "hidden",  # 裁剪溢出部分
+                        "display": "flex",  # 关键：flex 布局
+                        "alignItems": "center",  # 垂直居中
+                        "justifyContent": "center",  # 水平居中
+                    },
                 ),
                 id="upload",
                 max_size=5 * 1024 * 1024,  # 2MB
@@ -222,6 +228,7 @@ def index():
                     "display": "flex",
                     "alignItems": "center",
                     "justifyContent": "center",
+                    "overflow": "hidden",  # 如果希望整个上传区域都不溢出，也加上
                 },
                 on_drop=KontextState.handle_upload(rx.upload_files(upload_id="upload")),
             ),
@@ -240,6 +247,12 @@ def index():
                 width=["23em", "28.5em"],
                 loading=KontextState.processing
             ),
+
+            # 空白区域填充，确保示例图片在底部
+            rx.spacer(),
+
+            rx.divider(margin_y="1em"),
+
             rx.cond(
                 KontextState.complete,
                 rx.flex(
@@ -249,7 +262,7 @@ def index():
                             image_modal(url),
                             rx.button(
                                 "下载图片",
-                                width="20em",
+                                width=["23em", "28.5em"],
                                 cursor="pointer",
                                 on_click=KontextState.download_image(url)
                             ),
