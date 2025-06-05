@@ -1,4 +1,5 @@
 python-dotenv
-reflex==0.7.8
+reflex==0.7.14
 requests
 aiohttp
+googletrans-py==4.0.0
