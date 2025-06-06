@@ -132,7 +132,16 @@ class KontextState(rx.State):
 
 
 def translate(text):
-    translator = Translator(timeout=10)
+    proxies = None
+    # 检查环境变量是否存在
+    if 'translate_proxy' in os.environ:
+        proxy_url = os.environ.get('translate_proxy')
+        proxies = {
+            'http': proxy_url,
+            'https': proxy_url
+        }
+    # 创建翻译器实例，如果有代理则使用代理
+    translator = Translator(timeout=10, proxies=proxies)
     return translator.translate(text, dest='en').text
 
 
