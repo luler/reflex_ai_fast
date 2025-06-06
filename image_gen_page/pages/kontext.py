@@ -134,8 +134,8 @@ class KontextState(rx.State):
 def translate(text):
     proxies = None
     # 检查环境变量是否存在
-    if 'translate_proxy' in os.environ:
-        proxy_url = os.environ.get('translate_proxy')
+    if os.getenv('translate_proxy'):
+        proxy_url = os.getenv('translate_proxy')
         proxies = {
             'http': proxy_url,
             'https': proxy_url
