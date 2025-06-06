@@ -18,25 +18,30 @@ class KontextState(rx.State):
     image_urls = []
     processing = False
     complete = False
+    uploading = False  # 新增上传状态变量
 
     upload_img: str = ''
     error_msg: str = ''
 
     @rx.event
     async def handle_upload(self, files: list[rx.UploadFile]):
-        if len(files) == 0:
-            self.error_msg = "请选择5MB以内的图片"
-        else:
-            self.error_msg = ''
-        for file in files:
-            data = await file.read()
-            md5 = hashlib.md5(data).hexdigest()
-            ext = file.name.split('.')[-1]
-            filename = f"{md5}.{ext}"
-            path = rx.get_upload_dir() / filename
-            with path.open("wb") as f:
-                f.write(data)
-            self.upload_img = filename
+        self.uploading = True  # 开始上传时设置状态
+        try:
+            if len(files) == 0:
+                self.error_msg = "请选择5MB以内的图片"
+            else:
+                self.error_msg = ''
+            for file in files:
+                data = await file.read()
+                md5 = hashlib.md5(data).hexdigest()
+                ext = file.name.split('.')[-1]
+                filename = f"{md5}.{ext}"
+                path = rx.get_upload_dir() / filename
+                with path.open("wb") as f:
+                    f.write(data)
+                self.upload_img = filename
+        finally:
+            self.uploading = False  # 上传完成后重置状态
 
     def set_prompt(self, prompt: str):
         self.prompt = prompt
@@ -154,7 +159,7 @@ def image_modal(image_url):
         rx.dialog.trigger(
             rx.image(
                 src=image_url,
-                width="25em",  # 缩略图宽度
+                width=["20em", "25em"],
                 # height="20em",
                 object_fit="cover",
                 cursor="pointer",  # 鼠标悬停时显示手型光标
@@ -196,22 +201,26 @@ def index():
             rx.upload.root(
                 rx.box(
                     rx.cond(
-                        KontextState.upload_img,
-                        rx.image(
-                            src=rx.get_upload_url(KontextState.upload_img),
-                            width="100%",
-                            height="100%",
-                            style={
-                                "objectFit": "contain",
-                                "display": "block",
-                            },
-                        ),
-                        rx.text(
-                            "请上传图片",
-                            style={
-                                "color": "#888",
-                                "fontSize": "1.2em",
-                            },
+                        KontextState.uploading,  # 判断是否正在上传
+                        rx.spinner(size="3"),  # 显示加载动画
+                        rx.cond(
+                            KontextState.upload_img,
+                            rx.image(
+                                src=rx.get_upload_url(KontextState.upload_img),
+                                width="100%",
+                                height="100%",
+                                style={
+                                    "objectFit": "contain",
+                                    "display": "block",
+                                },
+                            ),
+                            rx.text(
+                                "请上传图片",
+                                style={
+                                    "color": "#888",
+                                    "fontSize": "1.2em",
+                                },
+                            ),
                         ),
                     ),
                     style={
@@ -230,8 +239,9 @@ def index():
                     "image/jpeg": [".jpg", ".jpeg"],
                 },
                 multiple=False,
+                width=["20em", "25em"],
                 style={
-                    "width": "25em",
+                    # "width": "20em",
                     "height": "16em",
                     "padding": 0,
                     "margin": 0,

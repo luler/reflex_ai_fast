@@ -17,7 +17,7 @@ OPENAI_API_KEY=sk-xxx
 
 一定要正确指定API_URL，保持与前端代码可以访问的域名、ip一致即可
 
-``` 
+```
 API_URL=http://127.0.0.1:8080 reflex export --frontend-only
 ```
 
@@ -27,6 +27,12 @@ API_URL=http://127.0.0.1:8080 reflex export --frontend-only
 
 ```
 docker-compose up -d
+```
+
+## 开发
+
+```
+reflex run
 ```
 
 ## 访问体验
