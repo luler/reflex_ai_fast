@@ -28,7 +28,7 @@ class KontextState(rx.State):
         self.uploading = True  # 开始上传时设置状态
         try:
             if len(files) == 0:
-                self.error_msg = "请选择5MB以内的图片"
+                self.error_msg = "请选择10MB以内的图片"
             else:
                 self.error_msg = ''
             for file in files:
@@ -233,7 +233,7 @@ def index():
                     },
                 ),
                 id="upload",
-                max_size=5 * 1024 * 1024,  # 2MB
+                max_size=10 * 1024 * 1024,  # 2MB
                 accept={
                     "image/png": [".png"],
                     "image/jpeg": [".jpg", ".jpeg"],
