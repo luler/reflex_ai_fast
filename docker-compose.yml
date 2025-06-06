@@ -8,10 +8,14 @@ services:
       dockerfile: Dockerfile
     restart: always
     volumes:
-      - .:/app
-  #    environment:
-  #      - OPENAI_BASE_URL=
-  #      - OPENAI_API_KEY=
+      - ./uploaded_files:/app/uploaded_files
+#    ports:
+#      - 8000:8000
+#    env_file:
+#      - .env
+#    environment:
+#      - OPENAI_BASE_URL=
+#      - OPENAI_API_KEY=
 
   reflex-frontend:
     #    image: ghcr.io/luler/reflex_ai_fast-web:latest
@@ -21,3 +25,5 @@ services:
     restart: always
     ports:
       - 8080:80
+#    env_file:
+#      - .env
