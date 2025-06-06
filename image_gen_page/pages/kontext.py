@@ -6,7 +6,7 @@ import time
 
 import reflex as rx
 import requests
-from googletrans import Translator
+from deep_translator import GoogleTranslator
 
 fal_key = os.getenv('FAL_KEY')
 
@@ -140,9 +140,13 @@ def translate(text):
             'http': proxy_url,
             'https': proxy_url
         }
-    # 创建翻译器实例，如果有代理则使用代理
-    translator = Translator(timeout=10, proxies=proxies)
-    return translator.translate(text, dest='en').text
+
+    translator = GoogleTranslator(
+        source='zh-CN',
+        target='en',
+        proxies=proxies
+    )
+    return translator.translate(text)
 
 
 def image_modal(image_url):
