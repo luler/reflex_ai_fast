@@ -6,7 +6,8 @@ import time
 
 import reflex as rx
 import requests
-from deep_translator import GoogleTranslator
+
+from image_gen_page.tool.common_tool import translate
 
 fal_key = os.getenv('FAL_KEY')
 
@@ -134,24 +135,6 @@ class KontextState(rx.State):
                   }}
               }})();
           """)
-
-
-def translate(text):
-    proxies = None
-    # 检查环境变量是否存在
-    if os.getenv('translate_proxy'):
-        proxy_url = os.getenv('translate_proxy')
-        proxies = {
-            'http': proxy_url,
-            'https': proxy_url
-        }
-
-    translator = GoogleTranslator(
-        source='zh-CN',
-        target='en',
-        proxies=proxies
-    )
-    return translator.translate(text)
 
 
 def image_modal(image_url):
