@@ -220,7 +220,7 @@ def image_modal(image_url):
         rx.dialog.trigger(
             rx.image(
                 src=image_url,
-                width="20em",
+                width=["20em", "25em"],
                 height="20em",
                 object_fit="cover",
                 cursor="pointer",  # 鼠标悬停时显示手型光标

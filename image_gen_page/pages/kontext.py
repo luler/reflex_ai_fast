@@ -173,7 +173,7 @@ def image_modal(image_url):
 
 
 def index():
-    return rx.center(
+    return rx.vstack(rx.center(
         rx.vstack(
             rx.heading(
                 "基于flux-pro/kontext模型的智能图片编辑器",
@@ -252,11 +252,6 @@ def index():
                 loading=KontextState.processing
             ),
 
-            # 空白区域填充，确保示例图片在底部
-            rx.spacer(),
-
-            rx.divider(margin_y="1em"),
-
             rx.cond(
                 KontextState.complete,
                 rx.flex(
@@ -282,6 +277,36 @@ def index():
             align="center",
         ),
         width="100%",
-        height="100%",
+    ),
+
+        # 空白区域填充，确保示例图片在底部
+        rx.spacer(),
+
+        # 示例图片部分（始终保持在底部）
+        rx.box(
+            rx.vstack(
+                rx.divider(margin_y="1em"),
+                rx.heading(
+                    "效果示例",
+                    font_size="lg",
+                    margin_bottom="1em",
+                ),
+                rx.flex(
+                    rx.foreach(
+                        ["/images/kontext/1.jpg", "/images/kontext/2.jpg", "/images/kontext/3.jpg", ],
+                        lambda url: image_modal(url),
+                    ),
+                    wrap="wrap",
+                    justify="center",
+                    gap="2em",
+                ),
+                align="center",
+            ),
+            width="100%",
+        ),
+
+        # 整体布局设置
+        width="100%",
+        min_height="100vh",  # 确保高度至少填满屏幕
         padding_y="2em",
     )

@@ -140,67 +140,96 @@ def image_modal(image_url):
 
 
 def index():
-    return rx.center(
-        rx.vstack(
-            rx.heading(
-                "AI统计图表生成器",
-                font_size=["1.2em", "1.5em"],
-                text_align="center",
-                width="100%"
-            ),
-            rx.text(AichartState.error_msg, color="red"),
-            rx.text_area(
-                value=AichartState.prompt,
-                placeholder="请输入提示词",
-                on_change=AichartState.set_prompt,
-                width=["20em", "25em"],
-                rows='5',
-                resize='vertical',
-            ),
-            rx.select(
-                AichartState.chart_type_options,
-                value=AichartState.chart_type,
-                on_change=AichartState.set_chart_type,
-                width=["23em", "28.5em"],
-                placeholder="选择统计图类型",
-            ),
-            rx.button(
-                "生成图片",
-                on_click=AichartState.get_image,
-                width=["23em", "28.5em"],
-                loading=AichartState.processing
-            ),
+    return rx.vstack(
+        rx.center(
+            rx.vstack(
+                rx.heading(
+                    "AI统计图表生成器",
+                    font_size=["1.2em", "1.5em"],
+                    text_align="center",
+                    width="100%"
+                ),
+                rx.text(AichartState.error_msg, color="red"),
+                rx.text_area(
+                    value=AichartState.prompt,
+                    placeholder="请输入提示词",
+                    on_change=AichartState.set_prompt,
+                    width=["20em", "25em"],
+                    rows='5',
+                    resize='vertical',
+                ),
+                rx.select(
+                    AichartState.chart_type_options,
+                    value=AichartState.chart_type,
+                    on_change=AichartState.set_chart_type,
+                    width=["23em", "28.5em"],
+                    placeholder="选择统计图类型",
+                ),
+                rx.button(
+                    "生成图片",
+                    on_click=AichartState.get_image,
+                    width=["23em", "28.5em"],
+                    loading=AichartState.processing
+                ),
 
-            # 空白区域填充，确保示例图片在底部
-            rx.spacer(),
+                rx.cond(
+                    AichartState.complete,
+                    rx.flex(
+                        rx.foreach(
+                            AichartState.image_urls,
+                            lambda url: rx.vstack(
+                                image_modal(url),
+                                rx.button(
+                                    "下载图片",
+                                    width=["23em", "28.5em"],
+                                    cursor="pointer",
+                                    on_click=AichartState.download_image(url)
+                                ),
+                                align='center',
+                            ),
+                        ),
+                        margin_top="1em",
+                        wrap='wrap',
+                        justify="center",
+                        gap="2em",
+                    )
+                ),
+                align="center",
+            ),
+            width="100%",
+        ),
+        # 空白区域填充，确保示例图片在底部
+        rx.spacer(),
 
-            rx.divider(margin_y="1em"),
-
-            rx.cond(
-                AichartState.complete,
+        # 示例图片部分（始终保持在底部）
+        rx.box(
+            rx.vstack(
+                rx.divider(margin_y="1em"),
+                rx.heading(
+                    "效果示例",
+                    font_size="lg",
+                    margin_bottom="1em",
+                ),
                 rx.flex(
                     rx.foreach(
-                        AichartState.image_urls,
-                        lambda url: rx.vstack(
-                            image_modal(url),
-                            rx.button(
-                                "下载图片",
-                                width=["23em", "28.5em"],
-                                cursor="pointer",
-                                on_click=AichartState.download_image(url)
-                            ),
-                            align='center',
-                        ),
+                        ["/images/aichart/1.jpg", "/images/aichart/2.jpg", "/images/aichart/3.jpg",
+                         "/images/aichart/4.jpg",
+                         "/images/aichart/5.jpg", "/images/aichart/6.jpg", "/images/aichart/7.jpg",
+                         "/images/aichart/8.jpg",
+                         "/images/aichart/9.jpg", "/images/aichart/10.jpg", ],
+                        lambda url: image_modal(url),
                     ),
-                    margin_top="1em",
-                    wrap='wrap',
+                    wrap="wrap",
                     justify="center",
                     gap="2em",
-                )
+                ),
+                align="center",
             ),
-            align="center",
+            width="100%",
         ),
+
+        # 整体布局设置
         width="100%",
-        height="100%",
+        min_height="100vh",  # 确保高度至少填满屏幕
         padding_y="2em",
     )

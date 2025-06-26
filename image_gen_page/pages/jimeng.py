@@ -92,8 +92,8 @@ def image_modal(image_url):
         rx.dialog.trigger(
             rx.image(
                 src=image_url,
-                width="20em",
-                height="20em",
+                width=["20em", "25em"],
+                # height="20em",
                 object_fit="cover",
                 cursor="pointer",  # 鼠标悬停时显示手型光标
             )
@@ -123,7 +123,7 @@ def image_modal(image_url):
 
 
 def index():
-    return rx.center(
+    return rx.vstack(rx.center(
         rx.vstack(
             rx.heading(
                 "智能提示词图片生成器（jimeng-3.0）",
@@ -161,7 +161,7 @@ def index():
                             image_modal(url),
                             rx.button(
                                 "下载图片",
-                                width="20em",
+                                width=["23em", "28.5em"],
                                 cursor="pointer",
                                 on_click=JimengState.download_image(url)
                             ),
@@ -177,6 +177,37 @@ def index():
             align="center",
         ),
         width="100%",
-        height="100%",
+    ),
+        # 空白区域填充，确保示例图片在底部
+        rx.spacer(),
+
+        # 示例图片部分（始终保持在底部）
+        rx.box(
+            rx.vstack(
+                rx.divider(margin_y="1em"),
+                rx.heading(
+                    "效果示例",
+                    font_size="lg",
+                    margin_bottom="1em",
+                ),
+                rx.flex(
+                    rx.foreach(
+                        ["/images/jimeng/1.png", "/images/jimeng/2.png", "/images/jimeng/3.png", "/images/jimeng/4.png",
+                         "/images/jimeng/5.png", "/images/jimeng/6.png", "/images/jimeng/7.png", "/images/jimeng/8.png",
+                         "/images/jimeng/9.png", "/images/jimeng/10.png", ],
+                        lambda url: image_modal(url),
+                    ),
+                    wrap="wrap",
+                    justify="center",
+                    gap="2em",
+                ),
+                align="center",
+            ),
+            width="100%",
+        ),
+
+        # 整体布局设置
+        width="100%",
+        min_height="100vh",  # 确保高度至少填满屏幕
         padding_y="2em",
     )
