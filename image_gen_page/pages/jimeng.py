@@ -4,11 +4,6 @@ import os
 import reflex as rx
 import requests
 
-openai_base_url = os.getenv('OPENAI_BASE_URL')
-openai_api_key = os.getenv('OPENAI_API_KEY')
-default_model = os.getenv('JIMENG_MODEL', 'jimeng-3.0')
-
-
 class JimengState(rx.State):
     """The app state."""
 
@@ -46,16 +41,16 @@ class JimengState(rx.State):
             size = self.size.split('x')
             width = int(size[0])
             height = int(size[1])
-            response = requests.post(openai_base_url + '/images/generations',
+            response = requests.post(os.getenv('OPENAI_BASE_URL') + '/images/generations',
                                      json={
-                                         "model": default_model,
+                                         "model": os.getenv('JIMENG_MODEL', 'jimeng-3.0'),
                                          'prompt': self.prompt,
                                          'height': height,
                                          'width': width,
                                      },
                                      headers={
                                          'Content-Type': 'application/json',
-                                         'Authorization': 'Bearer ' + openai_api_key
+                                         'Authorization': 'Bearer ' + os.getenv('OPENAI_API_KEY')
                                      })
             if response.status_code == 200:
                 data = response.json()

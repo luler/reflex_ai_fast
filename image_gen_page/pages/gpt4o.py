@@ -4,10 +4,6 @@ import os
 import aiohttp  # 替换 requests 为 aiohttp
 import reflex as rx
 
-openai_base_url = os.getenv('OPENAI_BASE_URL')
-openai_api_key = os.getenv('OPENAI_API_KEY')
-default_model = os.getenv('GPT4O_MODEL', 'gpt-4o-image')
-
 
 class Gpt4oState(rx.State):
     """The app state."""
@@ -46,16 +42,16 @@ class Gpt4oState(rx.State):
                 width = int(size[0])
                 height = int(size[1])
                 async with session.post(
-                        openai_base_url + '/images/generations',
+                        os.getenv('OPENAI_BASE_URL') + '/images/generations',
                         json={
-                            "model": default_model,
+                            "model": os.getenv('GPT4O_MODEL', 'gpt-4o-image'),
                             'prompt': self.prompt,
                             'size': f"{width}x{height}",
                             'n': 1,
                         },
                         headers={
                             'Content-Type': 'application/json',
-                            'Authorization': 'Bearer ' + openai_api_key
+                            'Authorization': 'Bearer ' + os.getenv('OPENAI_API_KEY')
                         }
                 ) as response:
                     if response.status == 200:

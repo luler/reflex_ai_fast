@@ -9,8 +9,6 @@ import requests
 
 from image_gen_page.tool.common_tool import translate
 
-fal_key = os.getenv('FAL_KEY')
-
 
 class KontextState(rx.State):
     """The app state."""
@@ -81,7 +79,7 @@ class KontextState(rx.State):
                                      json=param,
                                      headers={
                                          'Content-Type': 'application/json',
-                                         'Authorization': 'Key ' + fal_key
+                                         'Authorization': 'Key ' + os.getenv('FAL_KEY')
                                      })
             if response.status_code == 200:
                 data = response.json()
@@ -100,7 +98,7 @@ class KontextState(rx.State):
                     response = requests.get(response_url,
                                             headers={
                                                 'Content-Type': 'application/json',
-                                                'Authorization': 'Key ' + fal_key
+                                                'Authorization': 'Key ' + os.getenv('FAL_KEY')
                                             })
                     data = response.json()
                     if 'images' in data and data['images']:

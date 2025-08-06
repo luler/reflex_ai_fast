@@ -5,8 +5,6 @@ import os
 import reflex as rx
 import requests
 
-aichart_flowise_url = os.getenv('AICHART_FLOWISE_URL')
-
 
 class AichartState(rx.State):
     """The app state."""
@@ -63,7 +61,7 @@ class AichartState(rx.State):
             param = {
                 'question': prompt,
             }
-            response = requests.post(aichart_flowise_url,
+            response = requests.post(os.getenv('AICHART_FLOWISE_URL'),
                                      json=param,
                                      headers={
                                          'Content-Type': 'application/json',

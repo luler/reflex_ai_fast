@@ -8,18 +8,14 @@ import aiohttp  # 替换 requests 为 aiohttp
 import reflex as rx
 import requests
 
-openai_base_url = os.getenv('COVER_OPENAI_BASE_URL', os.getenv('OPENAI_BASE_URL'))
-openai_api_key = os.getenv('COVER_OPENAI_API_KEY', os.getenv('OPENAI_API_KEY'))
-cover_model = os.getenv('COVER_MODEL', '')
-screen_base_url = os.getenv('SCREEN_BASE_URL', 'http://10.8.0.2:14140')
-cover_count = os.getenv('COVER_COUNT', '1')
-
 
 class PageState(rx.State):
     """The app state."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        cover_model = os.getenv('COVER_MODEL', '')
+        cover_count = os.getenv('COVER_COUNT', '1')
         cover_models = cover_model.split(',') if cover_model else []
         cover_counts = cover_count.split(',')
         for index, model in enumerate(cover_models):
@@ -137,7 +133,7 @@ class PageState(rx.State):
                         continue
                     first_html_block = extract_first_html_code_block(result)
                     # 截图处理（这部分可能需要保持同步或进一步优化）
-                    file = requests.post(screen_base_url + '/screenshot', {
+                    file = requests.post(os.getenv('SCREEN_BASE_URL', 'http://10.8.0.2:14140') + '/screenshot', {
                         "url": first_html_block,
                         "viewport_width": 1920,
                         "viewport_height": 1600,
@@ -178,7 +174,7 @@ class PageState(rx.State):
 
 async def fetch_image(session, model, content):
     async with session.post(
-            openai_base_url + '/chat/completions',
+            os.getenv('COVER_OPENAI_BASE_URL', os.getenv('OPENAI_BASE_URL')) + '/chat/completions',
             json={
                 "model": model,
                 "messages": [{"role": "user", "content": content}],
@@ -186,7 +182,7 @@ async def fetch_image(session, model, content):
             },
             headers={
                 'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + openai_api_key
+                'Authorization': 'Bearer ' + os.getenv('COVER_OPENAI_API_KEY', os.getenv('OPENAI_API_KEY'))
             }
     ) as response:
         if response.status == 200:
