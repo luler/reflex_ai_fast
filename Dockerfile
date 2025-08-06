@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 EXPOSE 8000
 
 # 设置启动命令
-CMD ["reflex", "run", "--backend-only", "--env", "prod", "--loglevel", "debug"]
+CMD ["python", "-m", "reflex", "run", "--backend-only", "--env", "prod", "--loglevel", "debug"]
