@@ -1,15 +1,14 @@
 # 加载配置
 import hashlib
 import os
-import time
 
 import reflex as rx
 import requests
 
-from image_gen_page.tool.common_tool import translate, image_to_base64
+from image_gen_page.tool.common_tool import image_to_base64
 
 
-class KontextState(rx.State):
+class GeminiImageState(rx.State):
     """The app state."""
 
     prompt = ""
@@ -54,45 +53,36 @@ class KontextState(rx.State):
         self.processing, self.complete = True, False
         try:
             yield
-            prompt = translate(self.prompt)
-            print(self.prompt + ' => ' + prompt)
             param = {
-                'prompt': prompt,
-                'image_url': image_to_base64(rx.get_upload_dir(), self.upload_img),
+                'model': os.getenv('GEMINI_IMAGE_COVER_MODEL'),
+                'messages': [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "你是一个出色的图片编辑工具，你善于根据用户的描述来修改图片并返回修改后的图片，用户的描述如下：" + self.prompt
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": image_to_base64(rx.get_upload_dir(), self.upload_img)
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "stream": False
             }
-            response = requests.post('https://queue.fal.run/fal-ai/flux-pro/kontext/max',
+            response = requests.post(os.getenv('GEMINI_IMAGE_OPENAI_BASE_URL') + '/chat/completions',
                                      json=param,
                                      headers={
                                          'Content-Type': 'application/json',
-                                         'Authorization': 'Key ' + os.getenv('FAL_KEY')
+                                         'Authorization': 'Bearer ' + os.getenv('GEMINI_IMAGE_OPENAI_API_KEY')
                                      })
             if response.status_code == 200:
                 data = response.json()
-                # 最大等待时间（60秒）
-                max_wait_time = 60
-                start_time = time.time()
-                retry_interval = 2  # 每次请求间隔2秒
-                url = ''
-
-                response_url = data['response_url']
-                while True:
-                    # 检查是否超时
-                    if time.time() - start_time > max_wait_time:
-                        raise Exception("等待超时，未能获取到图像数据")
-                        break
-                    response = requests.get(response_url,
-                                            headers={
-                                                'Content-Type': 'application/json',
-                                                'Authorization': 'Key ' + os.getenv('FAL_KEY')
-                                            })
-                    data = response.json()
-                    if 'images' in data and data['images']:
-                        url = data['images'][0]['url']
-                        break
-
-                    # 等待一段时间后重试
-                    time.sleep(retry_interval)
-                self.image_urls = [url]
+                self.image_urls = [data['choices'][0]['message']['images'][0]['image_url']['url']]
             else:
                 yield rx.window_alert("图片生成失败！异常原因：" + response.status_code + '-' + response.text)
         except Exception as e:
@@ -159,7 +149,7 @@ def index():
     return rx.vstack(rx.center(
         rx.vstack(
             rx.heading(
-                "基于flux-pro/kontext模型的智能图片编辑器",
+                "基于 google/gemini-2.5-flash-image-preview 模型的智能图片编辑器",
                 font_size=["1.2em", "1.5em"],
                 text_align="center",
                 width="100%"
@@ -167,12 +157,12 @@ def index():
             rx.upload.root(
                 rx.box(
                     rx.cond(
-                        KontextState.uploading,  # 判断是否正在上传
+                        GeminiImageState.uploading,  # 判断是否正在上传
                         rx.spinner(size="3"),  # 显示加载动画
                         rx.cond(
-                            KontextState.upload_img,
+                            GeminiImageState.upload_img,
                             rx.image(
-                                src=rx.get_upload_url(KontextState.upload_img),
+                                src=rx.get_upload_url(GeminiImageState.upload_img),
                                 width="100%",
                                 height="100%",
                                 style={
@@ -217,36 +207,36 @@ def index():
                     "justifyContent": "center",
                     "overflow": "hidden",  # 如果希望整个上传区域都不溢出，也加上
                 },
-                on_drop=KontextState.handle_upload(rx.upload_files(upload_id="upload")),
+                on_drop=GeminiImageState.handle_upload(rx.upload_files(upload_id="upload")),
             ),
-            rx.text(KontextState.error_msg, color="red"),
+            rx.text(GeminiImageState.error_msg, color="red"),
             rx.text_area(
-                value=KontextState.prompt,
+                value=GeminiImageState.prompt,
                 placeholder="请输入提示词",
-                on_change=KontextState.set_prompt,
+                on_change=GeminiImageState.set_prompt,
                 width=["20em", "25em"],
                 rows='5',
                 resize='vertical',
             ),
             rx.button(
                 "生成图片",
-                on_click=KontextState.get_image,
+                on_click=GeminiImageState.get_image,
                 width=["23em", "28.5em"],
-                loading=KontextState.processing
+                loading=GeminiImageState.processing
             ),
 
             rx.cond(
-                KontextState.complete,
+                GeminiImageState.complete,
                 rx.flex(
                     rx.foreach(
-                        KontextState.image_urls,
+                        GeminiImageState.image_urls,
                         lambda url: rx.vstack(
                             image_modal(url),
                             rx.button(
                                 "下载图片",
                                 width=["23em", "28.5em"],
                                 cursor="pointer",
-                                on_click=KontextState.download_image(url)
+                                on_click=GeminiImageState.download_image(url)
                             ),
                             align='center',
                         ),
