@@ -65,7 +65,11 @@ class GeminiImageState(rx.State):
                         "content": [
                             {
                                 "type": "text",
-                                "text": "你是一个出色的图片编辑工具，你善于根据用户的描述来修改图片并返回修改后的图片，用户的描述如下：" + self.prompt
+                                "text": f"""
+请根据以下要求编辑图片并直接返回编辑后的图片：
+编辑要求：{self.prompt}
+请严格按照要求对图片进行编辑。直接返回编辑后的图片，无需额外说明。
+"""
                             },
                             {
                                 "type": "image_url",
@@ -103,6 +107,7 @@ class GeminiImageState(rx.State):
 
     def download_image(self, url: str):
         """下载指定URL的图片"""
+        yield rx.window_alert(f"图片生成失败！异常原因：{url}")
         return rx.call_script(f"""
               (async function() {{
                   try {{
@@ -276,7 +281,7 @@ def index():
                 ),
                 rx.flex(
                     rx.foreach(
-                        ["/images/kontext/1.jpg", "/images/kontext/2.jpg", "/images/kontext/3.jpg", ],
+                        ["/images/geminiImage/1.jpg", "/images/geminiImage/2.jpg", "/images/geminiImage/3.jpg", ],
                         lambda url: image_modal(url),
                     ),
                     wrap="wrap",
