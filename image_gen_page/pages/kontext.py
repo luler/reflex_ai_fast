@@ -1,10 +1,10 @@
 # 加载配置
+import asyncio
 import hashlib
 import os
-import time
 
+import aiohttp
 import reflex as rx
-import requests
 
 from image_gen_page.tool.common_tool import translate, image_to_base64
 
@@ -44,62 +44,79 @@ class KontextState(rx.State):
     def set_prompt(self, prompt: str):
         self.prompt = prompt
 
-    def get_image(self):
+    @rx.event(background=True)
+    async def get_image(self):
         """调用大模型生成图片."""
         if self.prompt == "":
-            return rx.window_alert("提示词不能为空！")
+            yield rx.window_alert("提示词不能为空！")
+            return
         if self.upload_img == "":
-            return rx.window_alert("原图不能为空！")
-
-        self.processing, self.complete = True, False
+            yield rx.window_alert("原图不能为空！")
+            return
+        async with self:
+            self.processing = True
+            self.complete = False
         try:
-            yield
             prompt = translate(self.prompt)
             print(self.prompt + ' => ' + prompt)
             param = {
                 'prompt': prompt,
                 'image_url': image_to_base64(rx.get_upload_dir(), self.upload_img),
             }
-            response = requests.post('https://queue.fal.run/fal-ai/flux-pro/kontext/max',
-                                     json=param,
-                                     headers={
-                                         'Content-Type': 'application/json',
-                                         'Authorization': 'Key ' + os.getenv('FAL_KEY')
-                                     })
-            if response.status_code == 200:
-                data = response.json()
-                # 最大等待时间（60秒）
-                max_wait_time = 60
-                start_time = time.time()
-                retry_interval = 2  # 每次请求间隔2秒
-                url = ''
+            async with aiohttp.ClientSession() as session:
+                # 发起初始请求
+                async with session.post(
+                        'https://queue.fal.run/fal-ai/flux-pro/kontext/max',
+                        json=param,
+                        headers={
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Key ' + os.getenv('FAL_KEY')
+                        }
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        response_url = data['response_url']
 
-                response_url = data['response_url']
-                while True:
-                    # 检查是否超时
-                    if time.time() - start_time > max_wait_time:
-                        raise Exception("等待超时，未能获取到图像数据")
-                        break
-                    response = requests.get(response_url,
-                                            headers={
-                                                'Content-Type': 'application/json',
-                                                'Authorization': 'Key ' + os.getenv('FAL_KEY')
-                                            })
-                    data = response.json()
-                    if 'images' in data and data['images']:
-                        url = data['images'][0]['url']
-                        break
+                        # 轮询获取结果
+                        url = await self._poll_for_result(session, response_url)
 
-                    # 等待一段时间后重试
-                    time.sleep(retry_interval)
-                self.image_urls = [url]
-            else:
-                yield rx.window_alert("图片生成失败！异常原因：" + response.status_code + '-' + response.text)
+                        async with self:
+                            self.image_urls = [url]
+                    else:
+                        error_text = await response.text()
+                        yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
+
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         # 延迟状态更新
-        yield self.setvar("processing", False)
-        yield self.setvar("complete", True)
+        async with self:
+            self.processing = False
+            self.complete = True
+
+    async def _poll_for_result(self, session: aiohttp.ClientSession, response_url: str) -> str:
+        """轮询获取生成结果"""
+        max_wait_time = 60  # 最大等待时间（60秒）
+        retry_interval = 2  # 每次请求间隔2秒
+        start_time = asyncio.get_event_loop().time()
+
+        while True:
+            # 检查是否超时
+            if asyncio.get_event_loop().time() - start_time > max_wait_time:
+                raise Exception("等待超时，未能获取到图像数据")
+
+            async with session.get(
+                    response_url,
+                    headers={
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Key ' + os.getenv('FAL_KEY')
+                    }
+            ) as response:
+                data = await response.json()
+                if 'images' in data and data['images']:
+                    return data['images'][0]['url']
+
+            # 等待一段时间后重试
+            await asyncio.sleep(retry_interval)
 
     def download_image(self, url: str):
         """下载指定URL的图片"""
@@ -199,7 +216,7 @@ def index():
                     },
                 ),
                 id="upload",
-                max_size=10 * 1024 * 1024,  # 2MB
+                max_size=10 * 1024 * 1024,  # 10MB
                 accept={
                     "image/png": [".png"],
                     "image/jpeg": [".jpg", ".jpeg"],

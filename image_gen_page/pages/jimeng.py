@@ -1,8 +1,9 @@
 # 加载配置
 import os
 
+import aiohttp
 import reflex as rx
-import requests
+
 
 class JimengState(rx.State):
     """The app state."""
@@ -30,38 +31,47 @@ class JimengState(rx.State):
     def set_prompt(self, prompt: str):
         self.prompt = prompt
 
-    def get_image(self):
+    @rx.event(background=True)
+    async def get_image(self):
         """调用大模型生成图片."""
         if self.prompt == "":
-            return rx.window_alert("提示词不能为空！")
-
-        self.processing, self.complete = True, False
+            yield rx.window_alert("提示词不能为空！")
+            return
+        async with self:
+            self.processing = True
+            self.complete = False
+            self.image_urls = []
         try:
-            yield
             size = self.size.split('x')
             width = int(size[0])
             height = int(size[1])
-            response = requests.post(os.getenv('OPENAI_BASE_URL') + '/images/generations',
-                                     json={
-                                         "model": os.getenv('JIMENG_MODEL', 'jimeng-3.0'),
-                                         'prompt': self.prompt,
-                                         'height': height,
-                                         'width': width,
-                                     },
-                                     headers={
-                                         'Content-Type': 'application/json',
-                                         'Authorization': 'Bearer ' + os.getenv('OPENAI_API_KEY')
-                                     })
-            if response.status_code == 200:
-                data = response.json()
+            url = os.getenv('OPENAI_BASE_URL') + '/images/generations'
+            payload = {
+                "model": os.getenv('JIMENG_MODEL', 'jimeng-3.0'),
+                'prompt': self.prompt,
+                'height': height,
+                'width': width,
+            }
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + os.getenv('OPENAI_API_KEY')
+            }
+            async with aiohttp.ClientSession() as session:
+                # 发起 POST 请求
+                async with session.post(url, json=payload, headers=headers) as response:
+                    # 检查 HTTP 错误状态码 (例如 4xx 或 5xx)
+                    response.raise_for_status()
+                    # 获取 JSON 响应体
+                    data = await response.json()
+
+            async with self:
                 self.image_urls = [item["url"] for item in data["data"]]
-            else:
-                yield rx.window_alert("图片生成失败！异常原因：" + response.status_code + '-' + response.text)
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         # 延迟状态更新
-        yield self.setvar("processing", False)
-        yield self.setvar("complete", True)
+        async with self:
+            self.processing = False
+            self.complete = True
 
     def download_image(self, url: str):
         """下载指定URL的图片"""

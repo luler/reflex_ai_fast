@@ -2,8 +2,8 @@
 import json
 import os
 
+import aiohttp
 import reflex as rx
-import requests
 
 
 class AichartState(rx.State):
@@ -43,13 +43,17 @@ class AichartState(rx.State):
     def set_chart_type(self, chart_type: str):
         self.chart_type = chart_type
 
-    def get_image(self):
+    @rx.event(background=True)
+    async def get_image(self):
         self.image_urls = []
         """调用大模型生成图片."""
         if self.prompt == "":
-            return rx.window_alert("提示词不能为空！")
+            yield rx.window_alert("提示词不能为空！")
+            return
 
-        self.processing, self.complete = True, False
+        async with self:
+            self.processing = True
+            self.complete = False
         try:
             yield
             prompt = f"""您是一个统计图表设计生成器，必须根据用户的提示词画出”{self.chart_type.split('-')[0]}“，用户的提示词内容如下：
@@ -61,27 +65,38 @@ class AichartState(rx.State):
             param = {
                 'question': prompt,
             }
-            response = requests.post(os.getenv('AICHART_FLOWISE_URL'),
-                                     json=param,
-                                     headers={
-                                         'Content-Type': 'application/json',
-                                     })
-            if response.status_code == 200:
-                data = response.json()
-                for item in data['usedTools']:
-                    if item['toolOutput'] != '':
-                        outputs = json.loads(item['toolOutput'])  # 将JSON字符串转为数组
-                        for output in outputs:
-                            self.image_urls.append(output['text'])
-                if len(self.image_urls) == 0:
-                    yield rx.window_alert("图片生成失败！异常原因：" + response.text)
-            else:
-                yield rx.window_alert("图片生成失败！异常原因：" + response.status_code + '-' + response.text)
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                        os.getenv('AICHART_FLOWISE_URL'),
+                        json=param,
+                        headers={
+                            'Content-Type': 'application/json',
+                        }
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        image_urls = []
+                        for item in data['usedTools']:
+                            if item['toolOutput'] != '':
+                                outputs = json.loads(item['toolOutput'])  # 将JSON字符串转为数组
+                                for output in outputs:
+                                    image_urls.append(output['text'])
+
+                        if len(image_urls) == 0:
+                            error_text = await response.text()
+                            yield rx.window_alert("图片生成失败！异常原因：" + error_text)
+                        else:
+                            async with self:
+                                self.image_urls = image_urls
+                    else:
+                        error_text = await response.text()
+                        yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         # 延迟状态更新
-        yield self.setvar("processing", False)
-        yield self.setvar("complete", True)
+        async with self:
+            self.processing = False
+            self.complete = True
 
     def download_image(self, url: str):
         """下载指定URL的图片"""

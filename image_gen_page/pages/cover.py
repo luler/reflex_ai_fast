@@ -6,7 +6,6 @@ import re
 
 import aiohttp  # 替换 requests 为 aiohttp
 import reflex as rx
-import requests
 
 
 class PageState(rx.State):
@@ -75,13 +74,12 @@ class PageState(rx.State):
 
     @rx.event(background=True)
     async def get_image(self):
+        if self.prompt == "":
+            yield rx.window_alert("提示词不能为空！")
+            return
         async with self:
-            if self.prompt == "":
-                yield rx.window_alert("提示词不能为空！")
-                return
-
-            self.processing, self.complete = True, False
-            yield
+            self.processing = True
+            self.complete = False
 
         async with aiohttp.ClientSession() as session:
             try:
@@ -132,17 +130,13 @@ class PageState(rx.State):
                         yield rx.window_alert(f"图片生成失败！异常原因1：{str(result)}")
                         continue
                     first_html_block = extract_first_html_code_block(result)
-                    # 截图处理（这部分可能需要保持同步或进一步优化）
-                    file = requests.post(os.getenv('SCREEN_BASE_URL', 'http://10.8.0.2:14140') + '/screenshot', {
-                        "url": first_html_block,
-                        "viewport_width": 1920,
-                        "viewport_height": 1600,
-                        "element_selector": "#maincover",
-                        "wait_second": 3,
-                        "use_proxy": 1,
-                    })
-                    image_base64 = base64.b64encode(file.content).decode('utf-8')
-                    image_urls.append(f"data:image/png;base64,{image_base64}")
+                    # 截图处理 - 改为异步
+                    try:
+                        image_base64 = await take_screenshot(session, first_html_block)
+                        image_urls.append(f"data:image/png;base64,{image_base64}")
+                    except Exception as e:
+                        yield rx.window_alert(f"截图失败：{str(e)}")
+                        continue
 
                 async with self:
                     self.image_urls = image_urls
@@ -191,6 +185,29 @@ async def fetch_image(session, model, content):
         else:
             error_text = await response.text()
             raise Exception(f"Request failed: {response.status}-{error_text}")
+
+
+async def take_screenshot(session, html_content):
+    """异步截图函数"""
+    screenshot_data = {
+        "url": html_content,
+        "viewport_width": 1920,
+        "viewport_height": 1600,
+        "element_selector": "#maincover",
+        "wait_second": 3,
+        "use_proxy": 1,
+    }
+
+    async with session.post(
+            os.getenv('SCREEN_BASE_URL', 'http://10.8.0.2:14140') + '/screenshot',
+            json=screenshot_data  # 使用 json 参数而不是 data
+    ) as response:
+        if response.status == 200:
+            content = await response.read()
+            return base64.b64encode(content).decode('utf-8')
+        else:
+            error_text = await response.text()
+            raise Exception(f"Screenshot failed: {response.status}-{error_text}")
 
 
 def extract_first_html_code_block(text):

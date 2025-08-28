@@ -28,13 +28,12 @@ class Gpt4oState(rx.State):
 
     @rx.event(background=True)
     async def get_image(self):
-        async with self:
-            if self.prompt == "":
-                yield rx.window_alert("提示词不能为空！")
-                return
-
-            self.processing, self.complete = True, False
-            yield
+        if self.prompt == "":
+            yield rx.window_alert("提示词不能为空！")
+            return
+        async with (self):
+            self.processing = True
+            self.complete = False
 
         async with aiohttp.ClientSession() as session:
             try:

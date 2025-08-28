@@ -2,8 +2,8 @@
 import hashlib
 import os
 
+import aiohttp
 import reflex as rx
-import requests
 
 from image_gen_page.tool.common_tool import image_to_base64
 
@@ -43,16 +43,19 @@ class GeminiImageState(rx.State):
     def set_prompt(self, prompt: str):
         self.prompt = prompt
 
-    def get_image(self):
+    @rx.event(background=True)
+    async def get_image(self):
         """调用大模型生成图片."""
         if self.prompt == "":
-            return rx.window_alert("提示词不能为空！")
+            yield rx.window_alert("提示词不能为空！")
+            return
         if self.upload_img == "":
-            return rx.window_alert("原图不能为空！")
-
-        self.processing, self.complete = True, False
+            yield rx.window_alert("原图不能为空！")
+            return
+        async with self:
+            self.processing = True
+            self.complete = False
         try:
-            yield
             param = {
                 'model': os.getenv('GEMINI_IMAGE_COVER_MODEL'),
                 'messages': [
@@ -74,22 +77,28 @@ class GeminiImageState(rx.State):
                 ],
                 "stream": False
             }
-            response = requests.post(os.getenv('GEMINI_IMAGE_OPENAI_BASE_URL') + '/chat/completions',
-                                     json=param,
-                                     headers={
-                                         'Content-Type': 'application/json',
-                                         'Authorization': 'Bearer ' + os.getenv('GEMINI_IMAGE_OPENAI_API_KEY')
-                                     })
-            if response.status_code == 200:
-                data = response.json()
-                self.image_urls = [data['choices'][0]['message']['images'][0]['image_url']['url']]
-            else:
-                yield rx.window_alert("图片生成失败！异常原因：" + response.status_code + '-' + response.text)
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                        os.getenv('GEMINI_IMAGE_OPENAI_BASE_URL') + '/chat/completions',
+                        json=param,
+                        headers={
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + os.getenv('GEMINI_IMAGE_OPENAI_API_KEY')
+                        }
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        async with self:
+                            self.image_urls = [data['choices'][0]['message']['images'][0]['image_url']['url']]
+                    else:
+                        error_text = await response.text()
+                        yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         # 延迟状态更新
-        yield self.setvar("processing", False)
-        yield self.setvar("complete", True)
+        async with self:
+            self.processing = False
+            self.complete = True
 
     def download_image(self, url: str):
         """下载指定URL的图片"""
@@ -189,7 +198,7 @@ def index():
                     },
                 ),
                 id="upload",
-                max_size=10 * 1024 * 1024,  # 2MB
+                max_size=10 * 1024 * 1024,  # 10MB
                 accept={
                     "image/png": [".png"],
                     "image/jpeg": [".jpg", ".jpeg"],
