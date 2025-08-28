@@ -56,6 +56,7 @@ class KontextState(rx.State):
         async with self:
             self.processing = True
             self.complete = False
+            self.image_urls = []
         try:
             prompt = translate(self.prompt)
             print(self.prompt + ' => ' + prompt)

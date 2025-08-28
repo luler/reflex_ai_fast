@@ -55,6 +55,7 @@ class GeminiImageState(rx.State):
         async with self:
             self.processing = True
             self.complete = False
+            self.image_urls = []
         try:
             param = {
                 'model': os.getenv('GEMINI_IMAGE_COVER_MODEL'),

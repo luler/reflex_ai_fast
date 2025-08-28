@@ -34,6 +34,7 @@ class Gpt4oState(rx.State):
         async with (self):
             self.processing = True
             self.complete = False
+            self.image_urls = []
 
         async with aiohttp.ClientSession() as session:
             try:

@@ -45,7 +45,6 @@ class AichartState(rx.State):
 
     @rx.event(background=True)
     async def get_image(self):
-        self.image_urls = []
         """调用大模型生成图片."""
         if self.prompt == "":
             yield rx.window_alert("提示词不能为空！")
@@ -54,6 +53,7 @@ class AichartState(rx.State):
         async with self:
             self.processing = True
             self.complete = False
+            self.image_urls = []
         try:
             yield
             prompt = f"""您是一个统计图表设计生成器，必须根据用户的提示词画出”{self.chart_type.split('-')[0]}“，用户的提示词内容如下：
