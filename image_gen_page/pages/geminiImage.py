@@ -105,13 +105,12 @@ class GeminiImageState(rx.State):
             self.processing = False
             self.complete = True
 
-    def download_image(self, url: str):
+    def download_image(self, index_num: int):
         """下载指定URL的图片"""
-        yield rx.window_alert(f"图片生成失败！异常原因：{url}")
         return rx.call_script(f"""
               (async function() {{
                   try {{
-                      const res = await fetch('{url}');
+                      const res = await fetch('{self.image_urls[index_num]}');
                       const blob = await res.blob();
                       const a = document.createElement('a');
                       a.href = URL.createObjectURL(blob);
@@ -245,13 +244,13 @@ def index():
                 rx.flex(
                     rx.foreach(
                         GeminiImageState.image_urls,
-                        lambda url: rx.vstack(
+                        lambda url, index_num: rx.vstack(
                             image_modal(url),
                             rx.button(
                                 "下载图片",
                                 width=["23em", "28.5em"],
                                 cursor="pointer",
-                                on_click=GeminiImageState.download_image(url)
+                                on_click=GeminiImageState.download_image(index_num)
                             ),
                             align='center',
                         ),
