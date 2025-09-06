@@ -94,7 +94,20 @@ class GeminiImageState(rx.State):
                     if response.status == 200:
                         data = await response.json()
                         async with self:
-                            self.image_urls = [data['choices'][0]['message']['images'][0]['image_url']['url']]
+                            images = []
+                            if 'images' in data['choices'][0]['message']:
+                                # 兼容第一种格式
+                                images = [data['choices'][0]['message']['images'][0]['image_url']['url']]
+                            else:
+                                # 兼容第二种格式
+                                for content in data['choices'][0]['message']['content']:
+                                    if content.get('type', '').startswith('image/'):
+                                        if content['image_url'].startswith('data:') or content['image_url'].startswith(
+                                                'http'):
+                                            images.append(content['image_url'])
+                                        else:
+                                            images.append(f"data:{content.get('type')};base64,{content['image_url']}")
+                            self.image_urls = images
                     else:
                         error_text = await response.text()
                         yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
