@@ -17,17 +17,22 @@ class GeminiImageState(rx.State):
     complete = False
     uploading = False  # 新增上传状态变量
 
-    upload_img: str = ''
+    upload_imgs = []
     error_msg: str = ''
+    max_files: int = 3
 
     @rx.event
     async def handle_upload(self, files: list[rx.UploadFile]):
         self.uploading = True  # 开始上传时设置状态
         try:
             if len(files) == 0:
-                self.error_msg = "请选择10MB以内的图片"
-            else:
-                self.error_msg = ''
+                self.error_msg = "请选择最多" + str(self.max_files) + "张10MB以内的图片"
+                return
+            self.error_msg = ''
+
+            # 清空之前的图片
+            self.upload_imgs = []
+
             for file in files:
                 data = await file.read()
                 md5 = hashlib.md5(data).hexdigest()
@@ -36,7 +41,7 @@ class GeminiImageState(rx.State):
                 path = rx.get_upload_dir() / filename
                 with path.open("wb") as f:
                     f.write(data)
-                self.upload_img = filename
+                self.upload_imgs.append(filename)
         finally:
             self.uploading = False  # 上传完成后重置状态
 
@@ -49,7 +54,7 @@ class GeminiImageState(rx.State):
         if self.prompt == "":
             yield rx.window_alert("提示词不能为空！")
             return
-        if self.upload_img == "":
+        if len(self.upload_imgs) == 0:
             yield rx.window_alert("原图不能为空！")
             return
         async with self:
@@ -71,12 +76,15 @@ class GeminiImageState(rx.State):
 请严格按照要求对图片进行编辑。直接返回编辑后的图片，无需额外说明。
 """
                             },
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": image_to_base64(rx.get_upload_dir(), self.upload_img)
+                            *[
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": image_to_base64(rx.get_upload_dir(), img)
+                                    }
                                 }
-                            }
+                                for img in self.upload_imgs
+                            ],
                         ]
                     }
                 ],
@@ -187,15 +195,23 @@ def index():
                         GeminiImageState.uploading,  # 判断是否正在上传
                         rx.spinner(size="3"),  # 显示加载动画
                         rx.cond(
-                            GeminiImageState.upload_img,
-                            rx.image(
-                                src=rx.get_upload_url(GeminiImageState.upload_img),
-                                width="100%",
-                                height="100%",
-                                style={
-                                    "objectFit": "contain",
-                                    "display": "block",
-                                },
+                            GeminiImageState.upload_imgs.length() > 0,
+                            rx.flex(
+                                rx.foreach(
+                                    GeminiImageState.upload_imgs,
+                                    lambda img: rx.image(
+                                        src=rx.get_upload_url(img),
+                                        height="16em",  # 设置固定高度
+                                        margin="0.2em",
+                                        style={
+                                            "objectFit": "contain",
+                                            "display": "block",
+                                        },
+                                    ),
+                                ),
+                                wrap="wrap",  # 允许换行显示
+                                justify="center",  # 居中对齐
+                                align_items="center",  # 垂直居中
                             ),
                             rx.text(
                                 "请上传图片",
@@ -207,12 +223,14 @@ def index():
                         ),
                     ),
                     style={
-                        "width": "100%",
-                        "height": "100%",
-                        "overflow": "hidden",  # 裁剪溢出部分
-                        "display": "flex",  # 关键：flex 布局
-                        "alignItems": "center",  # 垂直居中
-                        "justifyContent": "center",  # 水平居中
+                        "width": "auto",
+                        "minWidth": ["19.5em", "24.5em"],
+                        "maxWidth": "80vw",
+                        "height": "fit-content",  # 自适应内容高度
+                        "minHeight": "16em",  # 最小高度
+                        "display": "flex",
+                        "alignItems": "center",
+                        "justifyContent": "center",
                     },
                 ),
                 id="upload",
@@ -221,18 +239,13 @@ def index():
                     "image/png": [".png"],
                     "image/jpeg": [".jpg", ".jpeg"],
                 },
-                multiple=False,
-                width=["20em", "25em"],
+                multiple=GeminiImageState.max_files > 1,  # 允许多文件上传
+                max_files=GeminiImageState.max_files,  # 最多上传3张图片
+                width="auto",
                 style={
-                    # "width": "20em",
-                    "height": "16em",
                     "padding": 0,
                     "margin": 0,
                     "border": "2px dashed #60a5fa",
-                    "display": "flex",
-                    "alignItems": "center",
-                    "justifyContent": "center",
-                    "overflow": "hidden",  # 如果希望整个上传区域都不溢出，也加上
                 },
                 on_drop=GeminiImageState.handle_upload(rx.upload_files(upload_id="upload")),
             ),
