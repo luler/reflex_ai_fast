@@ -1,6 +1,7 @@
 # 加载配置
 import hashlib
 import os
+import re
 
 import aiohttp
 import reflex as rx
@@ -106,7 +107,7 @@ class GeminiImageState(rx.State):
                             if 'images' in data['choices'][0]['message']:
                                 # 兼容第一种格式
                                 images = [data['choices'][0]['message']['images'][0]['image_url']['url']]
-                            else:
+                            elif isinstance(data['choices'][0]['message']['content'], list):
                                 # 兼容第二种格式
                                 for content in data['choices'][0]['message']['content']:
                                     if content.get('type', '').startswith('image/'):
@@ -115,6 +116,13 @@ class GeminiImageState(rx.State):
                                             images.append(content['image_url'])
                                         else:
                                             images.append(f"data:{content.get('type')};base64,{content['image_url']}")
+                            else:  # content包含markdown格式图片
+                                match = re.search(
+                                    r'!\[[^\]]*\]\(([^)]*)\)',
+                                    data['choices'][0]['message']['content']
+                                )
+                                if match:
+                                    images.append(match.group(1))
                             self.image_urls = images
                     else:
                         error_text = await response.text()
