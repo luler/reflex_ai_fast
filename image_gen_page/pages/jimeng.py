@@ -13,16 +13,16 @@ class JimengState(rx.State):
     processing = False
     complete = False
 
-    size = "1328x1328x(1:1)"  # 默认尺寸
+    size = "2048x2048x(1:1)"  # 默认尺寸
     size_options = [
-        "2016x864x(21:9)",
-        "1664x936x(16:9)",
-        "1584x1056x(3:2)",
-        "1472x1104x(4:3)",
-        "1328x1328x(1:1)",
-        "1104x1472x(3:4)",
-        "1056x1584x(2:3)",
-        "936x1664x(9:16)",
+        "3024x1296x(21:9)",
+        "2560x1440x(16:9)",
+        "2496x1664x(3:2)",
+        "2304x1728x(4:3)",
+        "2048x2048x(1:1)",
+        "1728x2304x(3:4)",
+        "1664x2496x(2:3)",
+        "1440x2560x(9:16)",
     ]
 
     def set_size(self, size: str):
@@ -43,14 +43,13 @@ class JimengState(rx.State):
             self.image_urls = []
         try:
             size = self.size.split('x')
-            width = int(size[0])
-            height = int(size[1])
+            ratio = size[2][1:-1]  # 移除两边的括号
             url = os.getenv('OPENAI_BASE_URL') + '/images/generations'
             payload = {
-                "model": os.getenv('JIMENG_MODEL', 'jimeng-3.0'),
-                'prompt': self.prompt,
-                'height': height,
-                'width': width,
+                "model": os.getenv('JIMENG_MODEL', 'jimeng'),
+                "prompt": self.prompt,
+                "ratio": ratio,
+                "resolution": "2k",
             }
             headers = {
                 'Content-Type': 'application/json',
@@ -131,7 +130,7 @@ def index():
     return rx.vstack(rx.center(
         rx.vstack(
             rx.heading(
-                "智能提示词图片生成器（jimeng-3.0）",
+                "智能提示词图片生成器（jimeng-4.0）",
                 font_size=["1.2em", "1.5em"],
                 text_align="center",
                 width="100%"
