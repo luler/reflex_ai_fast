@@ -1,4 +1,5 @@
 # 加载配置
+import base64
 import hashlib
 import os
 
@@ -102,6 +103,9 @@ class GrokImageState(rx.State):
 请严格按照描述生成图片。直接返回生成的图片，无需额外说明。
 """,
                 }
+                # 解析尺寸
+                size_parts = self.text2img_size.split('x')
+                param['size'] = f"{size_parts[0]}x{size_parts[1]}"
             else:
                 image_model = os.getenv('GROK_IMAGE_IMAGE_EDIT_MODEL')
                 image_url = '/images/edits'
@@ -113,9 +117,6 @@ class GrokImageState(rx.State):
                     'prompt': current_prompt,
                     'n': 1,
                 }
-                # 解析尺寸
-                size_parts = self.text2img_size.split('x')
-                param['size'] = f"{size_parts[0]}x{size_parts[1]}"
 
             async with aiohttp.ClientSession() as session:
                 if self.current_mode == "text2img":
@@ -146,7 +147,7 @@ class GrokImageState(rx.State):
                     form.add_field('model', param['model'])
                     form.add_field('prompt', param['prompt'])
                     form.add_field('n', str(param['n']))
-                    form.add_field('size', param['size'])
+                    # form.add_field('size', param['size'])
                     form.add_field('image', image_data, filename=self.upload_imgs[0], content_type='image/png')
 
                     async with session.post(
@@ -170,24 +171,34 @@ class GrokImageState(rx.State):
         async with self:
             self.processing = False
 
-    def download_image(self, index_num: int, mode: str):
-        """下载指定URL的图片"""
+    @rx.event
+    async def download_image(self, index_num: int, mode: str):
+        """下载指定URL的图片（通过后端代理绕过CORS限制）"""
         image_url = self.text2img_urls[index_num] if mode == "text2img" else self.img2img_urls[index_num]
-        return rx.call_script(f"""
-              (async function() {{
-                  try {{
-                      const res = await fetch('{image_url}');
-                      const blob = await res.blob();
-                      const a = document.createElement('a');
-                      a.href = URL.createObjectURL(blob);
-                      a.download = 'image.png';
-                      a.click();
-                      URL.revokeObjectURL(a.href);
-                  }} catch (err) {{
-                      console.error("下载失败:", err);
-                  }}
-              }})();
-          """)
+
+        try:
+            # 通过后端获取图片，绕过 CORS 限制
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as response:
+                    if response.status == 200:
+                        image_data = await response.read()
+                        # 转换为 base64
+                        b64_data = base64.b64encode(image_data).decode('utf-8')
+                        # 使用 JavaScript 直接从 base64 数据下载
+                        return rx.call_script(f"""
+                            (function() {{
+                                const a = document.createElement('a');
+                                a.href = 'data:image/png;base64,{b64_data}';
+                                a.download = 'grok_image.png';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                            }})();
+                        """)
+                    else:
+                        return rx.window_alert(f"下载失败：HTTP {response.status}")
+        except Exception as e:
+            return rx.window_alert(f"下载失败：{str(e)}")
 
 
 def image_modal(image_url):
@@ -443,12 +454,14 @@ def index():
                 rx.flex(
                     rx.foreach(
                         [
-                            "/images/geminiImage/4.png",
-                            "/images/geminiImage/5.png",
-                            "/images/geminiImage/6.png",
-                            "/images/geminiImage/1.jpg",
-                            "/images/geminiImage/2.jpg",
-                            "/images/geminiImage/3.jpg",
+                            "/images/grokimage/1.png",
+                            "/images/grokimage/2.png",
+                            "/images/grokimage/3.png",
+                            "/images/grokimage/4.jpg",
+                            "/images/grokimage/5.png",
+                            "/images/grokimage/6.png",
+                            "/images/grokimage/7.png",
+                            "/images/grokimage/8.png",
                         ],
                         lambda url: image_modal(url),
                     ),

@@ -3,7 +3,7 @@ import os
 import dotenv
 import reflex as rx
 
-from image_gen_page.pages import jimeng, gpt4o, cover, kontext, aichart, geminiImage, grokimage
+from image_gen_page.pages import jimeng, gpt4o, cover, kontext, aichart, geminiImage, grokImage
 
 # 初始化配置
 dotenv.load_dotenv()
@@ -19,5 +19,5 @@ app.add_page(cover.index, route='/cover', title="在线制作文章封面图")
 app.add_page(kontext.index, route='/kontext', title="基于 flux-pro/kontext 模型的智能图片编辑器")
 app.add_page(geminiImage.index, route='/geminiImage',
              title="基于 google/gemini-3-pro-image-preview 模型的智能图片编辑器")
-app.add_page(grokimage.index, route='/grokimage', title="基于 grok imagine 模型的智能图片生成器")
+app.add_page(grokImage.index, route='/grokImage', title="基于 grok imagine 模型的智能图片生成器")
 app.add_page(aichart.index, route='/aichart', title="AI 统计图表生成器")
