@@ -1,4 +1,4 @@
 python-dotenv
-reflex==0.8.8
+reflex==0.8.27
 aiohttp
 deep_translator
