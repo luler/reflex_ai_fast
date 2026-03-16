@@ -3,7 +3,7 @@ import os
 import dotenv
 import reflex as rx
 
-from image_gen_page.pages import jimeng, gpt4o, cover, kontext, aichart, geminiImage, grokImage, grokVideo
+from image_gen_page.pages import jimeng, gpt4o, cover, kontext, aichart, geminiImage, grokImage, grokVideo, mondo
 
 # 初始化配置
 dotenv.load_dotenv()
@@ -21,4 +21,5 @@ app.add_page(geminiImage.index, route='/geminiImage',
              title="基于 google/gemini-3-pro-image-preview 模型的智能图片编辑器")
 app.add_page(grokImage.index, route='/grokImage', title="基于 grok imagine 模型的智能图片生成器")
 app.add_page(grokVideo.index, route='/grokVideo', title="基于 grok imagine 模型的智能视频生成器")
+app.add_page(mondo.index, route='/mondo', title="基于 Nano Banana 模型的大师级海报生成器")
 app.add_page(aichart.index, route='/aichart', title="AI 统计图表生成器")
