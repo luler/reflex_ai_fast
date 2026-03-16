@@ -462,44 +462,52 @@ def index():
                     resize='vertical',
                 ),
 
-                # 设计选项行 - 三个下拉框等宽
-                rx.flex(
-                    rx.box(
-                        rx.text("设计类型", font_weight="bold", font_size="0.85em"),
-                        rx.select(
-                            list(DESIGN_TYPES.values()),
-                            value=MondoState.design_type_display,
-                            on_change=MondoState.set_design_type,
-                            placeholder="选择类型",
-                            width="100%",
+                # 设计选项行 - 移动端垂直堆叠，桌面端水平排列
+                rx.box(
+                    rx.flex(
+                        rx.box(
+                            rx.text("设计类型", font_weight="bold", font_size="0.85em"),
+                            rx.select(
+                                list(DESIGN_TYPES.values()),
+                                value=MondoState.design_type_display,
+                                on_change=MondoState.set_design_type,
+                                placeholder="选择类型",
+                                width="100%",
+                            ),
+                            class_name="mondo-param-item",
                         ),
-                        width="32%",
-                    ),
-                    rx.box(
-                        rx.text("艺术风格", font_weight="bold", font_size="0.85em"),
-                        rx.select(
-                            list(STYLE_DISPLAY_NAMES.keys()),
-                            value=MondoState.artist_style_display,
-                            on_change=MondoState.set_artist_style,
-                            placeholder="选择风格",
-                            width="100%",
+                        rx.box(
+                            rx.text("艺术风格", font_weight="bold", font_size="0.85em"),
+                            rx.select(
+                                list(STYLE_DISPLAY_NAMES.keys()),
+                                value=MondoState.artist_style_display,
+                                on_change=MondoState.set_artist_style,
+                                placeholder="选择风格",
+                                width="100%",
+                            ),
+                            class_name="mondo-param-item",
                         ),
-                        width="32%",
-                    ),
-                    rx.box(
-                        rx.text("宽高比", font_weight="bold", font_size="0.85em"),
-                        rx.select(
-                            list(ASPECT_RATIOS.values()),
-                            value=MondoState.aspect_ratio_display,
-                            on_change=MondoState.set_aspect_ratio,
-                            placeholder="选择比例",
-                            width="100%",
+                        rx.box(
+                            rx.text("宽高比", font_weight="bold", font_size="0.85em"),
+                            rx.select(
+                                list(ASPECT_RATIOS.values()),
+                                value=MondoState.aspect_ratio_display,
+                                on_change=MondoState.set_aspect_ratio,
+                                placeholder="选择比例",
+                                width="100%",
+                            ),
+                            class_name="mondo-param-item",
                         ),
-                        width="32%",
+                        spacing="4",
+                        direction="column",
+                        class_name="mondo-params-flex",
                     ),
                     width="100%",
-                    justify="between",
                 ),
+
+                # 响应式样式：桌面端水平排列，每个项目等宽填满
+                rx.html(
+                    "<style>.mondo-params-flex { } .mondo-param-item { } @media (min-width: 48em) { .mondo-params-flex { flex-direction: row !important; } .mondo-param-item { flex: 1; } }</style>"),
 
                 # 颜色偏好
                 rx.input(
@@ -661,4 +669,5 @@ def index():
         width="100%",
         min_height="100vh",
         padding_y="2em",
+        padding_x=["2em", "2em"],
     )

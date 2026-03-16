@@ -295,44 +295,52 @@ def index():
                     resize='vertical',
                 ),
 
-                # 参数选择行
-                rx.hstack(
-                    # 尺寸选择
-                    rx.vstack(
-                        rx.text("画面比例", font_size="0.9em"),
-                        rx.select(
-                            SIZE_OPTIONS,
-                            value=GrokVideoState.video_size,
-                            on_change=GrokVideoState.set_video_size,
-                            width="10em",
+                # 参数选择行 - 移动端垂直堆叠，桌面端水平排列
+                rx.box(
+                    rx.flex(
+                        # 尺寸选择
+                        rx.box(
+                            rx.text("画面比例", font_size="0.9em"),
+                            rx.select(
+                                SIZE_OPTIONS,
+                                value=GrokVideoState.video_size,
+                                on_change=GrokVideoState.set_video_size,
+                                width="100%",
+                            ),
+                            class_name="video-param-item",
                         ),
-                        spacing="1",
-                    ),
-                    # 时长选择
-                    rx.vstack(
-                        rx.text("时长（秒）", font_size="0.9em"),
-                        rx.select(
-                            SECONDS_OPTIONS,
-                            value=GrokVideoState.video_seconds,
-                            on_change=GrokVideoState.set_video_seconds,
-                            width="7em",
+                        # 时长选择
+                        rx.box(
+                            rx.text("时长（秒）", font_size="0.9em"),
+                            rx.select(
+                                SECONDS_OPTIONS,
+                                value=GrokVideoState.video_seconds,
+                                on_change=GrokVideoState.set_video_seconds,
+                                width="100%",
+                            ),
+                            class_name="video-param-item",
                         ),
-                        spacing="1",
-                    ),
-                    # 质量选择
-                    rx.vstack(
-                        rx.text("画质", font_size="0.9em"),
-                        rx.select(
-                            QUALITY_OPTIONS,
-                            value=GrokVideoState.video_quality,
-                            on_change=GrokVideoState.set_video_quality,
-                            width="7em",
+                        # 质量选择
+                        rx.box(
+                            rx.text("画质", font_size="0.9em"),
+                            rx.select(
+                                QUALITY_OPTIONS,
+                                value=GrokVideoState.video_quality,
+                                on_change=GrokVideoState.set_video_quality,
+                                width="100%",
+                            ),
+                            class_name="video-param-item",
                         ),
-                        spacing="1",
+                        spacing="4",
+                        direction="column",
+                        class_name="video-params-flex",
                     ),
-                    spacing="4",
-                    align="end",
+                    width=["20em", "25em"],
                 ),
+
+                # 响应式样式：桌面端水平排列，每个项目等宽填满
+                rx.html(
+                    "<style>.video-params-flex { } .video-param-item { } @media (min-width: 48em) { .video-params-flex { flex-direction: row !important; } .video-param-item { flex: 1; } }</style>"),
 
                 # 参考图上传（可选）
                 rx.vstack(
@@ -468,4 +476,5 @@ def index():
         width="100%",
         min_height="100vh",
         padding_y="2em",
+        padding_x=["1em", "2em"],
     )
