@@ -1,3 +1,4 @@
+import hashlib
 import os
 from urllib.parse import parse_qs, urlparse
 
@@ -11,12 +12,17 @@ class Text2ImageState(rx.State):
     processing = False
     complete = False
     initialized_from_url = False
+    uploading = False
+    upload_imgs = []
+    error_msg: str = ""
+    max_files: int = 1
 
     model_count_dict = {}
 
     model = ""
     model_options = []
     available_models = []
+    allow_edit = False
 
     size = "1024x1024x(1:1)"
     size_options = [
@@ -64,6 +70,7 @@ class Text2ImageState(rx.State):
         self.available_models = model_options
         self.model_options = [model_options[0]]
         self.model = model_options[0]
+        self.allow_edit = False
         self.size_options = size_options
         self.size = size_options[0]
         self.n = default_n
@@ -78,6 +85,9 @@ class Text2ImageState(rx.State):
     def set_model(self, model: str):
         self.model = model
         self.n = self.model_count_dict.get(model, self.n_options[0])
+        if not self.allow_edit:
+            self.upload_imgs = []
+            self.error_msg = ""
 
     @rx.event
     async def init_from_url(self):
@@ -102,6 +112,7 @@ class Text2ImageState(rx.State):
         model = str(params.get("model", "")).strip()
         size = str(params.get("size", "")).strip()
         title = str(params.get("title", "")).strip()[:60]
+        edit = str(params.get("edit", "0")).strip()
 
         async with self:
             if model and model in self.available_models:
@@ -110,12 +121,41 @@ class Text2ImageState(rx.State):
                 self.model = self.available_models[0]
             self.model_options = [self.model]
             self.n = self.model_count_dict.get(self.model, self.n_options[0])
+            self.allow_edit = edit == "1"
+            if not self.allow_edit:
+                self.upload_imgs = []
+                self.error_msg = ""
             if size and size in self.size_options:
                 self.size = size
             if title:
                 self.title = title
 
             self.initialized_from_url = True
+
+    @rx.event
+    async def handle_upload(self, files: list[rx.UploadFile]):
+        self.uploading = True
+        try:
+            if len(files) == 0:
+                self.error_msg = "请选择一张PNG、JPG或WEBP格式的参考图片"
+                return
+            self.error_msg = ""
+            self.upload_imgs = []
+            file = files[0]
+            data = await file.read()
+            md5 = hashlib.md5(data).hexdigest()
+            ext = file.name.split('.')[-1].lower()
+            filename = f"{md5}.{ext}"
+            path = rx.get_upload_dir() / filename
+            with path.open("wb") as f:
+                f.write(data)
+            self.upload_imgs.append(filename)
+        finally:
+            self.uploading = False
+
+    def clear_reference_image(self):
+        self.upload_imgs = []
+        self.error_msg = ""
 
     @rx.event(background=True)
     async def get_image(self):
@@ -137,18 +177,53 @@ class Text2ImageState(rx.State):
                 image_urls = []
 
                 for _ in range(requested_count):
-                    async with session.post(
-                            os.getenv("TEXT2IMAGE_OPENAI_BASE_URL") + "/images/generations",
-                            json={
+                    if self.allow_edit and len(self.upload_imgs) > 0:
+                        image_path = rx.get_upload_dir() / self.upload_imgs[0]
+                        with open(image_path, "rb") as f:
+                            image_data = f.read()
+
+                        ext = self.upload_imgs[0].split('.')[-1].lower()
+                        content_type_map = {
+                            'png': 'image/png',
+                            'jpg': 'image/jpeg',
+                            'jpeg': 'image/jpeg',
+                            'webp': 'image/webp',
+                        }
+                        content_type = content_type_map.get(ext, 'image/png')
+
+                        form = aiohttp.FormData()
+                        form.add_field("model", self.model)
+                        form.add_field("prompt", self.prompt)
+                        form.add_field("n", "1")
+                        form.add_field("image", image_data, filename=self.upload_imgs[0], content_type=content_type)
+
+                        headers = {
+                            "Authorization": "Bearer " + os.getenv("TEXT2IMAGE_OPENAI_API_KEY")
+                        }
+                        request_kwargs = {
+                            "data": form,
+                            "headers": headers,
+                        }
+                        endpoint = "/images/edits"
+                    else:
+                        headers = {
+                            "Content-Type": "application/json",
+                            "Authorization": "Bearer " + os.getenv("TEXT2IMAGE_OPENAI_API_KEY")
+                        }
+                        request_kwargs = {
+                            "json": {
                                 "model": self.model,
                                 "prompt": self.prompt,
                                 "size": f"{width}x{height}",
                                 "n": 1,
                             },
-                            headers={
-                                "Content-Type": "application/json",
-                                "Authorization": "Bearer " + os.getenv("TEXT2IMAGE_OPENAI_API_KEY")
-                            }
+                            "headers": headers,
+                        }
+                        endpoint = "/images/generations"
+
+                    async with session.post(
+                            os.getenv("TEXT2IMAGE_OPENAI_BASE_URL") + endpoint,
+                            **request_kwargs,
                     ) as response:
                         if response.status != 200:
                             error_text = await response.text()
@@ -240,9 +315,16 @@ def index():
             rx.vstack(
                 rx.heading(
                     Text2ImageState.title,
-                    font_size=["1.2em", "1.5em"],
+                    font_size=["1.1em", "1.35em", "1.6em"],
+                    font_weight="600",
                     text_align="center",
                     width="100%",
+                    max_width=["20em", "24em", "28em"],
+                    line_height="1.4",
+                    white_space="normal",
+                    word_break="break-word",
+                    overflow_wrap="anywhere",
+                    padding_x="0.5em",
                 ),
                 rx.text_area(
                     value=Text2ImageState.prompt,
@@ -265,6 +347,74 @@ def index():
                     on_change=Text2ImageState.set_size,
                     width=["23em", "28.5em"],
                     placeholder="选择图片尺寸",
+                ),
+                rx.cond(
+                    Text2ImageState.allow_edit,
+                    rx.vstack(
+                        rx.text("参考图（可选）", font_size="0.9em", width=["20em", "25em"]),
+                        rx.upload.root(
+                            rx.box(
+                                rx.cond(
+                                    Text2ImageState.uploading,
+                                    rx.spinner(size="3"),
+                                    rx.cond(
+                                        Text2ImageState.upload_imgs.length() > 0,
+                                        rx.flex(
+                                            rx.foreach(
+                                                Text2ImageState.upload_imgs,
+                                                lambda img: rx.box(
+                                                    rx.image(
+                                                        src=rx.get_upload_url(img),
+                                                        height="10em",
+                                                        object_fit="contain",
+                                                    ),
+                                                    rx.icon_button(
+                                                        rx.icon("x", size=15),
+                                                        on_click=Text2ImageState.clear_reference_image,
+                                                        position="absolute",
+                                                        top="0",
+                                                        right="0",
+                                                        size="1",
+                                                        variant="solid",
+                                                        color_scheme="red",
+                                                    ),
+                                                    position="relative",
+                                                ),
+                                            ),
+                                            wrap="wrap",
+                                            justify="center",
+                                        ),
+                                        rx.text("点击或拖拽上传参考图"),
+                                    ),
+                                ),
+                                width=["20em", "25em"],
+                                min_height="8em",
+                                display="flex",
+                                align_items="center",
+                                justify_content="center",
+                                border="1px dashed var(--gray-7)",
+                                border_radius="12px",
+                                padding="1em",
+                            ),
+                            id="text2image_upload",
+                            max_size=10 * 1024 * 1024,
+                            accept={
+                                "image/png": [".png"],
+                                "image/jpeg": [".jpg", ".jpeg"],
+                                "image/webp": [".webp"],
+                            },
+                            multiple=False,
+                            on_drop=Text2ImageState.handle_upload(rx.upload_files(upload_id="text2image_upload")),
+                            width=["20em", "25em"],
+                        ),
+                        rx.cond(
+                            Text2ImageState.error_msg != "",
+                            rx.text(Text2ImageState.error_msg, color="red", font_size="0.85em", width=["20em", "25em"]),
+                        ),
+                        align="center",
+                        spacing="1",
+                        width=["20em", "25em"],
+                    ),
                 ),
                 rx.button(
                     "生成图片",
