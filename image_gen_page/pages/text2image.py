@@ -6,6 +6,23 @@ import aiohttp
 import reflex as rx
 
 
+def parse_size_options(value: str) -> list[str]:
+    options = []
+    for item in value.split(","):
+        size = item.strip()
+        parts = size.split("x", 2)
+        if len(parts) < 2:
+            continue
+        try:
+            width = int(parts[0])
+            height = int(parts[1])
+        except ValueError:
+            continue
+        if width > 0 and height > 0:
+            options.append(size)
+    return options
+
+
 class Text2ImageState(rx.State):
     prompt = ""
     image_urls = []
@@ -58,8 +75,7 @@ class Text2ImageState(rx.State):
                 parsed_count = 1
             self.model_count_dict[model] = str(parsed_count)
 
-        size_options = [item.strip() for item in os.getenv("TEXT2IMAGE_SIZES", ",".join(self.size_options)).split(",")
-                        if item.strip()]
+        size_options = parse_size_options(os.getenv("TEXT2IMAGE_SIZES", ",".join(self.size_options)))
         if not size_options:
             size_options = self.size_options.copy()
 
@@ -101,18 +117,21 @@ class Text2ImageState(rx.State):
 
         query_params = {}
         if raw_path:
-            query_params = {
-                key: values[0]
-                for key, values in parse_qs(urlparse(raw_path).query).items()
-                if values
-            }
+            query_params = parse_qs(urlparse(raw_path).query)
 
         params = query_params or dict(getattr(page, "params", {}) or {})
 
-        model = str(params.get("model", "")).strip()
-        size = str(params.get("size", "")).strip()
-        title = str(params.get("title", "")).strip()[:60]
-        edit = str(params.get("edit", "0")).strip()
+        def get_param(name: str, default: str = "") -> str:
+            value = params.get(name, default)
+            if isinstance(value, list):
+                return ",".join(str(item) for item in value)
+            return str(value)
+
+        model = get_param("model").strip()
+        size = get_param("size").strip()
+        url_size_options = parse_size_options(get_param("sizes"))
+        title = get_param("title").strip()[:60]
+        edit = get_param("edit", "0").strip()
 
         async with self:
             if model and model in self.available_models:
@@ -122,11 +141,20 @@ class Text2ImageState(rx.State):
             self.model_options = [self.model]
             self.n = self.model_count_dict.get(self.model, self.n_options[0])
             self.allow_edit = edit == "1"
+            if url_size_options:
+                self.size_options = url_size_options
             if not self.allow_edit:
                 self.upload_imgs = []
                 self.error_msg = ""
-            if size and size in self.size_options:
-                self.size = size
+            size_options = list(self.size_options)
+            parsed_size = parse_size_options(size)
+            if parsed_size and parsed_size[0] not in size_options:
+                size_options.append(parsed_size[0])
+                self.size_options = size_options
+            if parsed_size and parsed_size[0] in size_options:
+                self.size = parsed_size[0]
+            elif size_options:
+                self.size = size_options[0]
             if title:
                 self.title = title
 
@@ -315,16 +343,17 @@ def index():
             rx.vstack(
                 rx.heading(
                     Text2ImageState.title,
-                    font_size=["1.1em", "1.35em", "1.6em"],
+                    font_size=["1.05em", "1.2em", "1.35em"],
                     font_weight="600",
                     text_align="center",
-                    width="100%",
-                    max_width=["20em", "24em", "28em"],
-                    line_height="1.4",
+                    width=["20em", "25em"],
+                    max_width="100%",
+                    line_height="1.35",
                     white_space="normal",
                     word_break="break-word",
                     overflow_wrap="anywhere",
                     padding_x="0.5em",
+                    margin_bottom="0.25em",
                 ),
                 rx.text_area(
                     value=Text2ImageState.prompt,
