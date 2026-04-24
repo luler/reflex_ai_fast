@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import os
 from urllib.parse import parse_qs, urlparse
@@ -281,22 +282,45 @@ class Text2ImageState(rx.State):
             async with self:
                 self.processing = False
 
-    def download_image(self, url: str):
-        return rx.call_script(f"""
-              (async function() {{
-                  try {{
-                      const res = await fetch('{url}');
-                      const blob = await res.blob();
-                      const a = document.createElement('a');
-                      a.href = URL.createObjectURL(blob);
-                      a.download = 'image.png';
-                      a.click();
-                      URL.revokeObjectURL(a.href);
-                  }} catch (err) {{
-                      console.error("下载失败:", err);
-                  }}
-              }})();
-          """)
+    @rx.event
+    async def download_image(self, index_num: int):
+        if index_num < 0 or index_num >= len(self.image_urls):
+            return rx.window_alert("下载失败：图片不存在")
+
+        image_url = self.image_urls[index_num]
+        if image_url.startswith("data:image/"):
+            return rx.call_script(f"""
+                (function() {{
+                    const a = document.createElement('a');
+                    a.href = {image_url!r};
+                    a.download = 'image.png';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }})();
+            """)
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(image_url) as response:
+                    if response.status != 200:
+                        return rx.window_alert(f"下载失败：HTTP {response.status}")
+
+                    image_data = await response.read()
+                    content_type = response.headers.get("Content-Type", "image/png").split(";")[0]
+                    b64_data = base64.b64encode(image_data).decode("utf-8")
+                    return rx.call_script(f"""
+                        (function() {{
+                            const a = document.createElement('a');
+                            a.href = 'data:{content_type};base64,{b64_data}';
+                            a.download = 'image.png';
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                        }})();
+                    """)
+        except Exception as e:
+            return rx.window_alert(f"下载失败：{str(e)}")
 
 
 def image_modal(image_url):
@@ -452,13 +476,13 @@ def index():
                     rx.flex(
                         rx.foreach(
                             Text2ImageState.image_urls,
-                            lambda url: rx.vstack(
+                            lambda url, index: rx.vstack(
                                 image_modal(url),
                                 rx.button(
                                     "下载图片",
                                     width=["23em", "28.5em"],
                                     cursor="pointer",
-                                    on_click=Text2ImageState.download_image(url),
+                                    on_click=Text2ImageState.download_image(index),
                                 ),
                                 align="center",
                             ),
