@@ -110,16 +110,12 @@ class Text2ImageState(rx.State):
         if self.initialized_from_url:
             return
 
-        page = getattr(self.router, "page", None)
-        raw_path = ""
-        if page is not None:
-            raw_path = getattr(page, "full_raw_path", "") or getattr(page, "raw_path", "") or ""
-
+        raw_url = getattr(self.router, "url", "") or ""
         query_params = {}
-        if raw_path:
-            query_params = parse_qs(urlparse(raw_path).query)
+        if raw_url:
+            query_params = parse_qs(urlparse(raw_url).query)
 
-        params = query_params or dict(getattr(page, "params", {}) or {})
+        params = query_params
 
         def get_param(name: str, default: str = "") -> str:
             value = params.get(name, default)
