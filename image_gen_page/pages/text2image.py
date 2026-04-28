@@ -7,21 +7,50 @@ import aiohttp
 import reflex as rx
 
 
-def parse_size_options(value: str) -> list[str]:
-    options = []
-    for item in value.split(","):
-        size = item.strip()
-        parts = size.split("x", 2)
-        if len(parts) < 2:
-            continue
+def normalize_size(value: str) -> str:
+    size = value.strip().split("(", 1)[0].strip().rstrip("x")
+    if not size:
+        return ""
+    if ":" in size and "x" not in size:
+        parts = size.split(":", 1)
         try:
             width = int(parts[0])
             height = int(parts[1])
         except ValueError:
-            continue
+            return ""
         if width > 0 and height > 0:
+            return f"{width}:{height}"
+        return ""
+    parts = size.split("x", 2)
+    if len(parts) < 2:
+        return ""
+    try:
+        width = int(parts[0])
+        height = int(parts[1])
+    except ValueError:
+        return ""
+    if width > 0 and height > 0:
+        return f"{width}x{height}"
+    return ""
+
+
+def parse_size_options(value: str) -> list[str]:
+    options = []
+    for item in value.split(","):
+        size = item.strip()
+        if normalize_size(size):
             options.append(size)
     return options
+
+
+def find_size_option(options: list[str], size: str) -> str:
+    normalized_size = normalize_size(size)
+    if not normalized_size:
+        return ""
+    for option in options:
+        if normalize_size(option) == normalized_size:
+            return option
+    return ""
 
 
 class Text2ImageState(rx.State):
@@ -89,7 +118,7 @@ class Text2ImageState(rx.State):
         self.model = model_options[0]
         self.allow_edit = False
         self.size_options = size_options
-        self.size = size_options[0]
+        self.size = find_size_option(size_options, self.size) or size_options[0]
         self.n = default_n
         self.title = os.getenv("TEXT2IMAGE_TITLE", self.title)[:60]
 
@@ -144,14 +173,16 @@ class Text2ImageState(rx.State):
                 self.upload_imgs = []
                 self.error_msg = ""
             size_options = list(self.size_options)
-            parsed_size = parse_size_options(size)
-            if parsed_size and parsed_size[0] not in size_options:
-                size_options.append(parsed_size[0])
+            parsed_size = normalize_size(size)
+            selected_size = find_size_option(size_options, size)
+            if parsed_size and not selected_size:
+                size_options.append(size)
                 self.size_options = size_options
-            if parsed_size and parsed_size[0] in size_options:
-                self.size = parsed_size[0]
+                selected_size = size
+            if selected_size:
+                self.size = selected_size
             elif size_options:
-                self.size = size_options[0]
+                self.size = find_size_option(size_options, type(self).size) or size_options[0]
             if title:
                 self.title = title
 
@@ -195,9 +226,7 @@ class Text2ImageState(rx.State):
 
         try:
             async with aiohttp.ClientSession() as session:
-                size = self.size.split("x")
-                width = int(size[0])
-                height = int(size[1])
+                request_size = normalize_size(self.size)
                 requested_count = int(self.n)
                 image_urls = []
 
@@ -239,7 +268,7 @@ class Text2ImageState(rx.State):
                             "json": {
                                 "model": self.model,
                                 "prompt": self.prompt,
-                                "size": f"{width}x{height}",
+                                "size": request_size,
                                 "n": 1,
                             },
                             "headers": headers,
