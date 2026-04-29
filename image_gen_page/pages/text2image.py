@@ -182,7 +182,7 @@ class Text2ImageState(rx.State):
             if selected_size:
                 self.size = selected_size
             elif size_options:
-                self.size = find_size_option(size_options, type(self).size) or size_options[0]
+                self.size = find_size_option(size_options, self.size) or size_options[0]
             if title:
                 self.title = title
 
