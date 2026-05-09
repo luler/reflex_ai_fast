@@ -1,10 +1,33 @@
+import asyncio
 import base64
 import hashlib
 import os
+from datetime import date
 from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 import reflex as rx
+
+_quota_lock = asyncio.Lock()
+_quota_usage: dict[tuple[str, str], int] = {}
+
+
+def parse_quota(value: str, default: int = -1) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+async def reserve_generation_quota(open_id: str, requested_count: int, daily_limit: int) -> tuple[bool, int]:
+    async with _quota_lock:
+        quota_key = (open_id, date.today().isoformat())
+        used = _quota_usage.get(quota_key, 0)
+        if used + requested_count > daily_limit:
+            return False, used
+        used += requested_count
+        _quota_usage[quota_key] = used
+        return True, used
 
 
 def normalize_size(value: str) -> str:
@@ -82,6 +105,8 @@ class Text2ImageState(rx.State):
     n_options = ["1", "2", "3", "4"]
 
     title = "通用文生图生成器"
+    open_id = ""
+    daily_limit: int = -1
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -158,6 +183,8 @@ class Text2ImageState(rx.State):
         url_size_options = parse_size_options(get_param("sizes"))
         title = get_param("title").strip()[:60]
         edit = get_param("edit", "0").strip()
+        open_id = get_param("open_id").strip()[:128]
+        daily_limit = parse_quota(get_param("quota"), -1)
 
         async with self:
             if model and model in self.available_models:
@@ -185,6 +212,8 @@ class Text2ImageState(rx.State):
                 self.size = find_size_option(size_options, self.size) or size_options[0]
             if title:
                 self.title = title
+            self.open_id = open_id
+            self.daily_limit = daily_limit
 
             self.initialized_from_url = True
 
@@ -219,6 +248,15 @@ class Text2ImageState(rx.State):
             yield rx.window_alert("提示词不能为空！")
             return
 
+        requested_count = int(self.n)
+        open_id = self.open_id
+        daily_limit = self.daily_limit
+        if daily_limit >= 0:
+            allowed, used = await reserve_generation_quota(open_id, requested_count, daily_limit)
+            if not allowed:
+                yield rx.window_alert("请求过于频繁，请稍后再试。")
+                return
+
         async with self:
             self.processing = True
             self.complete = False
@@ -227,7 +265,6 @@ class Text2ImageState(rx.State):
         try:
             async with aiohttp.ClientSession() as session:
                 request_size = normalize_size(self.size)
-                requested_count = int(self.n)
                 image_urls = []
 
                 for _ in range(requested_count):
