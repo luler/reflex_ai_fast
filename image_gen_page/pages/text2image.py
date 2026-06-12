@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import hashlib
 import os
 from datetime import date
@@ -7,6 +6,8 @@ from urllib.parse import parse_qs, urlparse
 
 import aiohttp
 import reflex as rx
+
+from image_gen_page.tool.common_tool import image_url_to_data_url
 
 _quota_lock = asyncio.Lock()
 _quota_usage: dict[tuple[str, str], int] = {}
@@ -326,7 +327,10 @@ class Text2ImageState(rx.State):
                         for item in data.get("data", []):
                             image_url = item.get("url")
                             if image_url:
-                                current_urls.append(image_url)
+                                try:
+                                    current_urls.append(await image_url_to_data_url(session, image_url))
+                                except Exception:
+                                    current_urls.append(image_url)
                                 continue
 
                             b64_json = item.get("b64_json")
@@ -368,23 +372,17 @@ class Text2ImageState(rx.State):
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as response:
-                    if response.status != 200:
-                        return rx.window_alert(f"下载失败：HTTP {response.status}")
-
-                    image_data = await response.read()
-                    content_type = response.headers.get("Content-Type", "image/png").split(";")[0]
-                    b64_data = base64.b64encode(image_data).decode("utf-8")
-                    return rx.call_script(f"""
-                        (function() {{
-                            const a = document.createElement('a');
-                            a.href = 'data:{content_type};base64,{b64_data}';
-                            a.download = 'image.png';
-                            document.body.appendChild(a);
-                            a.click();
-                            document.body.removeChild(a);
-                        }})();
-                    """)
+                data_url = await image_url_to_data_url(session, image_url)
+                return rx.call_script(f"""
+                    (function() {{
+                        const a = document.createElement('a');
+                        a.href = {data_url!r};
+                        a.download = 'image.png';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    }})();
+                """)
         except Exception as e:
             return rx.window_alert(f"下载失败：{str(e)}")
 

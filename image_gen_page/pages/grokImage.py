@@ -1,10 +1,11 @@
 # 加载配置
-import base64
 import hashlib
 import os
 
 import aiohttp
 import reflex as rx
+
+from image_gen_page.tool.common_tool import image_url_to_data_url
 
 
 class GrokImageState(rx.State):
@@ -131,8 +132,8 @@ class GrokImageState(rx.State):
                     ) as response:
                         if response.status == 200:
                             data = await response.json()
+                            images = [await image_url_to_data_url(session, data['data'][0]['url'])]
                             async with self:
-                                images = [data['data'][0]['url']]
                                 self.text2img_urls = images
                         else:
                             error_text = await response.text()
@@ -159,8 +160,8 @@ class GrokImageState(rx.State):
                     ) as response:
                         if response.status == 200:
                             data = await response.json()
+                            images = [await image_url_to_data_url(session, data['data'][0]['url'])]
                             async with self:
-                                images = [data['data'][0]['url']]
                                 self.img2img_urls = images
                         else:
                             error_text = await response.text()
@@ -177,26 +178,18 @@ class GrokImageState(rx.State):
         image_url = self.text2img_urls[index_num] if mode == "text2img" else self.img2img_urls[index_num]
 
         try:
-            # 通过后端获取图片，绕过 CORS 限制
             async with aiohttp.ClientSession() as session:
-                async with session.get(image_url) as response:
-                    if response.status == 200:
-                        image_data = await response.read()
-                        # 转换为 base64
-                        b64_data = base64.b64encode(image_data).decode('utf-8')
-                        # 使用 JavaScript 直接从 base64 数据下载
-                        return rx.call_script(f"""
-                            (function() {{
-                                const a = document.createElement('a');
-                                a.href = 'data:image/png;base64,{b64_data}';
-                                a.download = 'grok_image.png';
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                            }})();
-                        """)
-                    else:
-                        return rx.window_alert(f"下载失败：HTTP {response.status}")
+                data_url = await image_url_to_data_url(session, image_url)
+                return rx.call_script(f"""
+                    (function() {{
+                        const a = document.createElement('a');
+                        a.href = {data_url!r};
+                        a.download = 'grok_image.png';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                    }})();
+                """)
         except Exception as e:
             return rx.window_alert(f"下载失败：{str(e)}")
 

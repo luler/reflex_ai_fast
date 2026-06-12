@@ -1,6 +1,7 @@
 import base64
 import os
 
+import aiohttp
 from deep_translator import GoogleTranslator
 
 
@@ -37,3 +38,22 @@ def image_to_base64(upload_dir, upload_img):
 
     # 构建完整的 data URI
     return f"data:{mime_type};base64,{encoded_string}"
+
+
+# 图片链接转base64
+def image_data_to_base64(image_data, content_type='image/png'):
+    encoded_string = base64.b64encode(image_data).decode('utf-8')
+    return f"data:{content_type};base64,{encoded_string}"
+
+
+async def image_url_to_data_url(session: aiohttp.ClientSession, image_url: str) -> str:
+    if image_url.startswith("data:image/"):
+        return image_url
+
+    async with session.get(image_url) as response:
+        if response.status != 200:
+            raise ValueError(f"HTTP {response.status}")
+
+        image_data = await response.read()
+        content_type = response.headers.get("Content-Type", "image/png").split(";")[0]
+        return image_data_to_base64(image_data, content_type)
