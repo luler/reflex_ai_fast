@@ -5,7 +5,7 @@ import os
 import aiohttp
 import reflex as rx
 
-from image_gen_page.tool.common_tool import image_url_to_data_url
+from image_gen_page.tool.common_tool import image_to_base64, image_url_to_data_url
 
 
 class GrokImageState(rx.State):
@@ -22,15 +22,17 @@ class GrokImageState(rx.State):
     error_msg: str = ''
     max_files: int = 3
     current_mode: str = "text2img"  # 当前模式：text2img 或 img2img
-    text2img_size: str = "1024x1024x(1:1)"  # 文生图尺寸
+    text2img_size: str = "1:1"  # 文生图尺寸
 
     # 尺寸选项列表
     size_options: list = [
-        "1280x720x(16:9)",
-        "720x1280x(9:16)",
-        "1792x1024x(16:9)",
-        "1024x1792x(9:16)",
-        "1024x1024x(1:1)",
+        "16:9",
+        "9:16",
+        "4:3",
+        "3:4",
+        "3:2",
+        "2:3",
+        "1:1",
     ]
 
     @rx.event
@@ -101,22 +103,23 @@ class GrokImageState(rx.State):
                     'prompt': f"""
 请根据以下描述生成一张图片并直接返回生成的图片：
 图片描述：{current_prompt}
-请严格按照描述生成图片。直接返回生成的图片，无需额外说明。
+图片尺寸比例：{self.text2img_size}
+请严格按照描述、尺寸比例生成图片。直接返回生成的图片，无需额外说明。
 """,
                 }
-                # 解析尺寸
-                size_parts = self.text2img_size.split('x')
-                param['size'] = f"{size_parts[0]}x{size_parts[1]}"
+                # param['size'] = f"{size_parts[0]}x{size_parts[1]}"
             else:
                 image_model = os.getenv('GROK_IMAGE_IMAGE_EDIT_MODEL')
                 image_url = '/images/edits'
-                # 图片编辑模式：使用 multipart/form-data 格式
-                # 只支持单张图片，取第一张
-                image_path = rx.get_upload_dir() / self.upload_imgs[0]
+                # 图片编辑模式：JSON 格式，参考图以 base64 data URL 填入 image.url
                 param = {
                     'model': image_model,
                     'prompt': current_prompt,
+                    'image': {
+                        'url': image_to_base64(rx.get_upload_dir(), self.upload_imgs[0]),  # 参考图 base64 data URL
+                    },
                     'n': 1,
+                    'response_format': 'url',
                 }
 
             async with aiohttp.ClientSession() as session:
@@ -139,22 +142,12 @@ class GrokImageState(rx.State):
                             error_text = await response.text()
                             yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
                 else:
-                    # 图片编辑：multipart/form-data 格式
-                    with open(image_path, 'rb') as f:
-                        image_data = f.read()
-
-                    # 构建 multipart/form-data
-                    form = aiohttp.FormData()
-                    form.add_field('model', param['model'])
-                    form.add_field('prompt', param['prompt'])
-                    form.add_field('n', str(param['n']))
-                    # form.add_field('size', param['size'])
-                    form.add_field('image', image_data, filename=self.upload_imgs[0], content_type='image/png')
-
+                    # 图片编辑：JSON 格式，参考图已通过 base64 data URL 放入 param['image']
                     async with session.post(
                             os.getenv('GROK_IMAGE_OPENAI_BASE_URL') + image_url,
-                            data=form,
+                            json=param,
                             headers={
+                                'Content-Type': 'application/json',
                                 'Authorization': 'Bearer ' + os.getenv('GROK_IMAGE_OPENAI_API_KEY')
                             }
                     ) as response:
