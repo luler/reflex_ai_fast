@@ -1,6 +1,7 @@
 # 加载配置
 import json
 import os
+import re
 
 import aiohttp
 import reflex as rx
@@ -23,21 +24,41 @@ class AichartState(rx.State):
 
     chart_type = "条形图-展示不同类别之间的数值比较"  # 默认尺寸
     chart_type_options = [
-        '条形图-展示不同类别之间的数值比较',
-        '柱状图-适合比较分类数据',
-        '饼图-展示部分与整体的比例',
-        '直方图-展示特定范围内数据点的频率',
-        '面积图-展示连续自变量下的数据趋势',
-        '鱼骨图-展示问题的原因或结果',
-        '流程图-展示过程或系统的步骤和决策点',
+        # 基础与统计图表
         '折线图-展示随时间变化的趋势',
-        '思维导图-以层次结构展示信息',
-        '网络图-展示实体之间的关系',
-        '雷达图-展示多维数据',
-        '散点图-展示两个变量之间的关系',
-        '树形图-展示层次数据',
+        '柱状图-适合比较分类数据',
+        '条形图-展示不同类别之间的数值比较',
+        '面积图-展示连续自变量下的数据趋势',
+        '双轴图-结合两种不同图表类型以展示不同量纲的数据',
+        '饼图-展示部分与整体的比例',
+        '雷达图-展示多维数据与综合评估',
+        '漏斗图-展示各阶段转化率与流程流失分析',
+        '散点图-展示两个变量之间的关系与相关性',
+
+        # 高级分析与分布图表
+        '直方图-展示特定范围内数据点的频率分布',
+        '箱线图-展示数据的离散程度、中位数与分位数',
+        '小提琴图-结合箱线图与密度估计展示数据分布形态',
+        '矩形树图-展示层级结构数据的占比关系',
+        '水波图-展示百分比完成度或进度',
+        '韦恩图-展示集合之间的重叠与包含关系',
         '词云图-通过文本大小变化展示词频或权重',
-        '双轴图-结合两种不同图表类型',
+
+        # 关系与结构图
+        '桑基图-展示流量、能源或资金的流动与分配关系',
+        '网络图-展示实体之间的关联与复杂网络关系',
+        '流程图-展示过程或系统的步骤和决策点',
+        '思维导图-以层次结构展示信息与脑图拆解',
+        '组织结构图-展示企业或团队的层级架构',
+        '鱼骨图-展示问题的原因与结果的因果分析',
+
+        # 地理空间图表（支持中国范围）
+        '行政区划地图-展示省市县级别的区域数据',
+        '标记地图-在地理坐标上进行点位标绘',
+        '路径地图-展示地理路线或流动轨迹',
+
+        # 其他
+        '电子表格-展示结构化的表格数据'
     ]
 
     def set_chart_type(self, chart_type: str):
@@ -60,27 +81,40 @@ class AichartState(rx.State):
 ```
 {self.prompt}
 ```
+工具调用成功户返回一个结果图片链接，直接返回的图片链接结果即可
 """
             print(prompt)
             param = {
-                'question': prompt,
+                "stream": False,
+                "detail": True,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
             }
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                        os.getenv('AICHART_FLOWISE_URL'),
+                        os.getenv('AICHART_BASE_URL').rstrip('/') + "/v1/chat/completions",
                         json=param,
                         headers={
                             'Content-Type': 'application/json',
+                            'Authorization': "Bearer " + str(os.getenv('AICHART_API_KEY'))
                         }
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
                         image_urls = []
-                        for item in data['usedTools']:
-                            if item['toolOutput'] != '':
-                                outputs = json.loads(item['toolOutput'])  # 将JSON字符串转为数组
-                                for output in outputs:
-                                    image_urls.append(output['text'])
+                        # 1. 将数组转化为字符串（格式化为 JSON 字符串）
+                        data_str = json.dumps(data['responseData'])
+                        # 2. 正则匹配所有以 https:// 开头的链接
+                        # [^\s"'\\]+ 用于匹配直到遇到空格、引号或反斜杠之前的所有字符
+                        urls = re.findall(r"https://[^\s\"'\\]+", data_str)
+                        # 3. 获取最后一个链接
+                        last_url = urls[-1] if urls else None
+                        if last_url is not None:
+                            image_urls.append(last_url)
 
                         if len(image_urls) == 0:
                             error_text = await response.text()
