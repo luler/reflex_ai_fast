@@ -1,7 +1,9 @@
 import asyncio
 import hashlib
 import os
+import time
 from datetime import date
+
 from urllib.parse import parse_qs, urlparse
 
 import aiohttp
@@ -249,6 +251,8 @@ class Text2ImageState(rx.State):
             yield rx.window_alert("提示词不能为空！")
             return
 
+        start_time = time.time()
+
         requested_count = int(self.n)
         open_id = self.open_id
         daily_limit = self.daily_limit
@@ -346,11 +350,27 @@ class Text2ImageState(rx.State):
                 async with self:
                     self.image_urls = image_urls
                     self.complete = True
+
+                try:
+                    from image_gen_page.web_admin import record_history
+                    ref_imgs = [str(rx.get_upload_dir() / img) for img in self.upload_imgs] if (self.allow_edit and self.upload_imgs) else []
+                    record_history(
+                        prompt=self.prompt,
+                        model=self.model,
+                        duration=time.time() - start_time,
+                        images=image_urls,
+                        ref_images=ref_imgs,
+                        source="通用文生图",
+                        extra={"size": self.size, "n": self.n}
+                    )
+                except Exception as err:
+                    print(f"[text2image] record_history error: {err}")
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         finally:
             async with self:
                 self.processing = False
+
 
     @rx.event
     async def download_image(self, index_num: int):

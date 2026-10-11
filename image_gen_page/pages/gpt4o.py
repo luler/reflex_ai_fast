@@ -1,8 +1,10 @@
 # 加载配置
 import os
+import time
 
 import aiohttp  # 替换 requests 为 aiohttp
 import reflex as rx
+
 
 
 class Gpt4oState(rx.State):
@@ -31,6 +33,7 @@ class Gpt4oState(rx.State):
         if self.prompt == "":
             yield rx.window_alert("提示词不能为空！")
             return
+        start_time = time.time()
         async with (self):
             self.processing = True
             self.complete = False
@@ -58,11 +61,25 @@ class Gpt4oState(rx.State):
                         data = await response.json()
                         async with self:
                             self.image_urls = [item["url"] for item in data["data"]]
+                        try:
+                            from image_gen_page.web_admin import record_history
+                            record_history(
+                                prompt=self.prompt,
+                                model=os.getenv('GPT4O_MODEL', 'gpt-4o-image'),
+                                duration=time.time() - start_time,
+                                images=self.image_urls,
+                                ref_images=[],
+                                source="GPT-4o",
+                                extra={"size": self.size}
+                            )
+                        except Exception as err:
+                            print(f"[gpt4o] record_history error: {err}")
                     else:
                         error_text = await response.text()
                         yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
             except Exception as e:
                 yield rx.window_alert("图片生成失败！异常原因：" + str(e))
+
 
         async with self:
             self.processing = False

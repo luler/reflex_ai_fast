@@ -2,8 +2,10 @@
 import json
 import os
 import re
+import time
 
 import aiohttp
+
 import reflex as rx
 
 
@@ -71,6 +73,7 @@ class AichartState(rx.State):
             yield rx.window_alert("提示词不能为空！")
             return
 
+        start_time = time.time()
         async with self:
             self.processing = True
             self.complete = False
@@ -122,9 +125,23 @@ class AichartState(rx.State):
                         else:
                             async with self:
                                 self.image_urls = image_urls
+                            try:
+                                from image_gen_page.web_admin import record_history
+                                record_history(
+                                    prompt=self.prompt,
+                                    model=os.getenv('AICHART_MODEL', 'aichart'),
+                                    duration=time.time() - start_time,
+                                    images=image_urls,
+                                    ref_images=[],
+                                    source="AI统计图表",
+                                    extra={"chart_type": self.chart_type}
+                                )
+                            except Exception as err:
+                                print(f"[aichart] record_history error: {err}")
                     else:
                         error_text = await response.text()
                         yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
+
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         # 延迟状态更新

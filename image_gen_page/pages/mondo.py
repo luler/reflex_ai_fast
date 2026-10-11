@@ -1,9 +1,11 @@
 # Mondo风格海报生成器 - 增强版
 import base64
 import os
+import time
 
 import aiohttp
 import reflex as rx
+
 
 # 30+设计风格（英文描述，用于提示词生成）
 ARTIST_STYLES = {
@@ -317,6 +319,7 @@ Return ONLY the enhanced prompt text, no explanations."""
             yield rx.window_alert("主题描述不能为空！")
             return
 
+        start_time = time.time()
         async with self:
             self.processing = True
             self.image_urls = []
@@ -363,10 +366,24 @@ Return ONLY the enhanced prompt text, no explanations."""
                         data = await response.json()
                         async with self:
                             self.image_urls = [data['data'][0]['url']]
+                        try:
+                            from image_gen_page.web_admin import record_history
+                            record_history(
+                                prompt=final_prompt,
+                                model=image_model or "nano-banana",
+                                duration=time.time() - start_time,
+                                images=self.image_urls,
+                                ref_images=[],
+                                source="Nano Banana大师海报",
+                                extra={"size": size, "style": self.selected_style}
+                            )
+                        except Exception as err:
+                            print(f"[mondo] record_history error: {err}")
                     else:
                         error_text = await response.text()
                         print(f"[图片生成] 状态码: {response.status}, 返回内容: {error_text}")
                         yield rx.window_alert(f"图片生成失败！状态码: {response.status}, 原因: {error_text}")
+
         except Exception as e:
             print(f"[图片生成] 异常: {str(e)}")
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))

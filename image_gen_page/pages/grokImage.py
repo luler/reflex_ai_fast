@@ -1,8 +1,10 @@
 # 加载配置
 import hashlib
 import os
+import time
 
 import aiohttp
+
 import reflex as rx
 
 from image_gen_page.tool.common_tool import image_to_base64, image_url_to_data_url
@@ -85,6 +87,7 @@ class GrokImageState(rx.State):
         if self.current_mode == "img2img" and len(self.upload_imgs) == 0:
             yield rx.window_alert("原图不能为空！")
             return
+        start_time = time.time()
         async with self:
             self.processing = True
             # 根据模式清空对应的图片列表
@@ -138,6 +141,19 @@ class GrokImageState(rx.State):
                             images = [await image_url_to_data_url(session, data['data'][0]['url'])]
                             async with self:
                                 self.text2img_urls = images
+                            try:
+                                from image_gen_page.web_admin import record_history
+                                record_history(
+                                    prompt=current_prompt,
+                                    model=image_model or "grok-imagine",
+                                    duration=time.time() - start_time,
+                                    images=images,
+                                    ref_images=[],
+                                    source="Grok Imagine文生图",
+                                    extra={"size": self.text2img_size}
+                                )
+                            except Exception as err:
+                                print(f"[grokImage] record_history error: {err}")
                         else:
                             error_text = await response.text()
                             yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
@@ -156,9 +172,24 @@ class GrokImageState(rx.State):
                             images = [await image_url_to_data_url(session, data['data'][0]['url'])]
                             async with self:
                                 self.img2img_urls = images
+                            try:
+                                from image_gen_page.web_admin import record_history
+                                ref_imgs = [str(rx.get_upload_dir() / self.upload_imgs[0])] if self.upload_imgs else []
+                                record_history(
+                                    prompt=current_prompt,
+                                    model=image_model or "grok-imagine-edit",
+                                    duration=time.time() - start_time,
+                                    images=images,
+                                    ref_images=ref_imgs,
+                                    source="Grok Imagine图生图",
+                                    extra={}
+                                )
+                            except Exception as err:
+                                print(f"[grokImage] record_history error: {err}")
                         else:
                             error_text = await response.text()
                             yield rx.window_alert(f"图片编辑失败！异常原因：{response.status}-{error_text}")
+
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         # 延迟状态更新

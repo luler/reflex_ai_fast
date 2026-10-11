@@ -2,8 +2,10 @@
 import asyncio
 import hashlib
 import os
+import time
 
 import aiohttp
+
 import reflex as rx
 
 from image_gen_page.tool.common_tool import translate, image_to_base64
@@ -53,6 +55,7 @@ class KontextState(rx.State):
         if self.upload_img == "":
             yield rx.window_alert("原图不能为空！")
             return
+        start_time = time.time()
         async with self:
             self.processing = True
             self.complete = False
@@ -83,9 +86,25 @@ class KontextState(rx.State):
 
                         async with self:
                             self.image_urls = [url]
+
+                        try:
+                            from image_gen_page.web_admin import record_history
+                            ref_imgs = [str(rx.get_upload_dir() / self.upload_img)] if self.upload_img else []
+                            record_history(
+                                prompt=self.prompt,
+                                model="flux-pro/kontext/max",
+                                duration=time.time() - start_time,
+                                images=[url],
+                                ref_images=ref_imgs,
+                                source="Kontext智能编辑",
+                                extra={}
+                            )
+                        except Exception as err:
+                            print(f"[kontext] record_history error: {err}")
                     else:
                         error_text = await response.text()
                         yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
+
 
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))

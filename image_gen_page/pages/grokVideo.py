@@ -103,8 +103,23 @@ class GrokVideoState(rx.State):
                 if video_url_found:
                     async with self:
                         self.video_urls = [video_url_found]
+                    try:
+                        from image_gen_page.web_admin import record_history
+                        ref_imgs = [str(rx.get_upload_dir() / self.upload_imgs[0])] if self.upload_imgs else []
+                        record_history(
+                            prompt=self.prompt,
+                            model=os.getenv('GROK_VIDEO_MODEL', 'grok-imagine-1.0-video'),
+                            duration=0.0,
+                            images=[video_url_found],
+                            ref_images=ref_imgs,
+                            source="Grok视频生成",
+                            extra={"size": self.video_size, "seconds": self.video_seconds, "quality": self.video_quality}
+                        )
+                    except Exception as err:
+                        print(f"[grokVideo] record_history error: {err}")
                 else:
                     yield rx.window_alert(f"视频生成完成，但未找到视频URL：{result}")
+
             else:
                 error_text = await get_response.text()
                 yield rx.window_alert(f"获取视频失败！异常原因：{get_response.status}-{error_text}")

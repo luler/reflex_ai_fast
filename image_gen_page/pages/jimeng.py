@@ -1,8 +1,10 @@
 # 加载配置
 import os
+import time
 
 import aiohttp
 import reflex as rx
+
 
 
 class JimengState(rx.State):
@@ -37,6 +39,7 @@ class JimengState(rx.State):
         if self.prompt == "":
             yield rx.window_alert("提示词不能为空！")
             return
+        start_time = time.time()
         async with self:
             self.processing = True
             self.complete = False
@@ -65,12 +68,27 @@ class JimengState(rx.State):
 
             async with self:
                 self.image_urls = [item["url"] for item in data["data"]]
+
+            try:
+                from image_gen_page.web_admin import record_history
+                record_history(
+                    prompt=self.prompt,
+                    model=os.getenv('JIMENG_MODEL', 'jimeng'),
+                    duration=time.time() - start_time,
+                    images=self.image_urls,
+                    ref_images=[],
+                    source="即梦AI",
+                    extra={"size": self.size}
+                )
+            except Exception as err:
+                print(f"[jimeng] record_history error: {err}")
         except Exception as e:
             yield rx.window_alert("图片生成失败！异常原因：" + str(e))
         # 延迟状态更新
         async with self:
             self.processing = False
             self.complete = True
+
 
     def download_image(self, url: str):
         """下载指定URL的图片"""

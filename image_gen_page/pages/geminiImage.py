@@ -2,8 +2,10 @@
 import hashlib
 import os
 import re
+import time
 
 import aiohttp
+
 import reflex as rx
 
 from image_gen_page.tool.common_tool import image_to_base64
@@ -71,8 +73,10 @@ class GeminiImageState(rx.State):
         if self.current_mode == "img2img" and len(self.upload_imgs) == 0:
             yield rx.window_alert("原图不能为空！")
             return
+        start_time = time.time()
         async with self:
             self.processing = True
+
             # 根据模式清空对应的图片列表
             if self.current_mode == "text2img":
                 self.text2img_urls = []
@@ -161,7 +165,23 @@ class GeminiImageState(rx.State):
                                 self.text2img_urls = images
                             else:
                                 self.img2img_urls = images
+
+                            try:
+                                from image_gen_page.web_admin import record_history
+                                ref_imgs = [str(rx.get_upload_dir() / img) for img in self.upload_imgs] if (self.current_mode != "text2img" and self.upload_imgs) else []
+                                record_history(
+                                    prompt=current_prompt,
+                                    model=os.getenv('GEMINI_IMAGE_COVER_MODEL', 'gemini-3-pro-image-preview'),
+                                    duration=time.time() - start_time,
+                                    images=images,
+                                    ref_images=ref_imgs,
+                                    source="Gemini图片编辑",
+                                    extra={"mode": self.current_mode}
+                                )
+                            except Exception as err:
+                                print(f"[geminiImage] record_history error: {err}")
                     else:
+
                         error_text = await response.text()
                         yield rx.window_alert(f"图片生成失败！异常原因：{response.status}-{error_text}")
         except Exception as e:

@@ -3,9 +3,11 @@ import asyncio
 import base64
 import os
 import re
+import time
 
 import aiohttp  # 替换 requests 为 aiohttp
 import reflex as rx
+
 
 
 class PageState(rx.State):
@@ -77,6 +79,7 @@ class PageState(rx.State):
         if self.prompt == "":
             yield rx.window_alert("提示词不能为空！")
             return
+        start_time = time.time()
         async with self:
             self.processing = True
             self.complete = False
@@ -141,8 +144,24 @@ class PageState(rx.State):
 
                 async with self:
                     self.image_urls = image_urls
+
+                if image_urls:
+                    try:
+                        from image_gen_page.web_admin import record_history
+                        record_history(
+                            prompt=self.prompt,
+                            model=self.model,
+                            duration=time.time() - start_time,
+                            images=image_urls,
+                            ref_images=[],
+                            source="文章封面图",
+                            extra={"size": self.size, "style": self.style}
+                        )
+                    except Exception as err:
+                        print(f"[cover] record_history error: {err}")
             except Exception as e:
                 yield rx.window_alert("图片生成失败！异常原因2：" + str(e))
+
 
         async with self:
             self.processing = False
