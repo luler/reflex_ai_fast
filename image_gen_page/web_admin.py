@@ -70,6 +70,25 @@ def is_auth_valid(req: Request) -> bool:
     return False
 
 
+def _normalize_stored_paths(paths_json: str | None) -> str:
+    """幂等清洗图片路径，将历史任意重复嵌套的 /admin/ 前缀统一正规化为单个 /admin/history_files/。"""
+    if not paths_json:
+        return json.dumps([])
+    try:
+        items = json.loads(paths_json)
+        if isinstance(items, list):
+            cleaned = []
+            for item in items:
+                if isinstance(item, str) and "/history_files/" in item:
+                    # 匹配任何可能包含多个连续 /admin 的历史路径，规整为单个 /admin/history_files/
+                    item = re.sub(r'(?:/admin)*/history_files/', '/admin/history_files/', item)
+                cleaned.append(item)
+            return json.dumps(cleaned, ensure_ascii=False)
+    except Exception:
+        pass
+    return paths_json
+
+
 def init_db():
     """初始化 SQLite 数据库与存储目录。"""
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
@@ -92,13 +111,20 @@ def init_db():
             conn.execute(
                 """CREATE INDEX IF NOT EXISTS idx_records_created_at ON records(created_at DESC)"""
             )
-            # 自动迁移历史记录中的图片路径至统一的 /admin 前缀
-            conn.execute(
-                """UPDATE records SET 
-                   images = REPLACE(images, '/history_files/', '/admin/history_files/'),
-                   ref_images = REPLACE(ref_images, '/history_files/', '/admin/history_files/')
-                   WHERE images LIKE '%/history_files/%' OR ref_images LIKE '%/history_files/%'"""
+            # 自动迁移与幂等清洗历史记录中的图片路径至标准的 /admin/history_files/ 前缀
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT id, images, ref_images FROM records WHERE images LIKE '%/history_files/%' OR ref_images LIKE '%/history_files/%'"
             )
+            rows = cur.fetchall()
+            for rid, imgs, refs in rows:
+                new_imgs = _normalize_stored_paths(imgs)
+                new_refs = _normalize_stored_paths(refs)
+                if new_imgs != imgs or new_refs != refs:
+                    cur.execute(
+                        "UPDATE records SET images = ?, ref_images = ? WHERE id = ?",
+                        (new_imgs, new_refs, rid),
+                    )
             conn.commit()
         finally:
             conn.close()
@@ -1368,9 +1394,12 @@ def get_admin_html() -> str:
         <div id="lbFullPrompt" class="lightbox-prompt-box"></div>
       </div>
     </div>
+  </div>
+
   <!-- 授权登录 Modal -->
   <div id="authModal" class="modal-backdrop">
-    <div class="auth-modal">
+    <div class="auth-modal" style="position: relative;">
+      <button id="authCloseBtn" class="btn btn-sm" style="position: absolute; top: 1rem; right: 1rem; background: transparent; border: none; font-size: 1.25rem; color: var(--text-muted); cursor: pointer;" title="关闭">✕</button>
       <div class="auth-icon">🔒</div>
       <h2 style="font-size: 1.25rem; font-weight: 700; margin-bottom: 0.5rem;">访问授权验证</h2>
       <p style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4;">
@@ -1408,6 +1437,12 @@ def get_admin_html() -> str:
     let searchDebounceTimer = null;
 
     function getAuthKey() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlKey = urlParams.get("auth_key");
+      if (urlKey) {
+        localStorage.setItem("img_admin_auth_key", urlKey);
+        return urlKey;
+      }
       return localStorage.getItem("img_admin_auth_key") || "";
     }
 
@@ -1485,6 +1520,18 @@ def get_admin_html() -> str:
         });
         if (resp.status === 401) {
           document.getElementById("authBtn").style.display = "inline-flex";
+          tbody.innerHTML = `
+            <tr>
+              <td colspan="8" class="empty-state">
+                <div class="empty-icon">🔒</div>
+                <div style="font-size:1.05rem; font-weight:600; color:#fff; margin-bottom:0.4rem;">需要管理员访问授权</div>
+                <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1.25rem; max-width:420px; margin-left:auto; margin-right:auto; line-height:1.5;">
+                  当前服务已启用 AUTH_KEY 安全防护机制，请输入授权凭证以查看生图历史记录与统计数据。
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="showAuthModal(false)">🔑 输入访问凭证</button>
+              </td>
+            </tr>
+          `;
           showAuthModal(true);
           return;
         }
@@ -1921,6 +1968,8 @@ def get_admin_html() -> str:
         if (e.key === "ArrowLeft") prevLightboxImage();
         else if (e.key === "ArrowRight") nextLightboxImage();
         else if (e.key === "Escape") closeLightbox();
+      } else if (document.getElementById("authModal").classList.contains("active")) {
+        if (e.key === "Escape") closeAuthModal();
       }
     });
 
@@ -1961,6 +2010,11 @@ def get_admin_html() -> str:
     function closeAuthModal() {
       document.getElementById("authModal").classList.remove("active");
     }
+
+    document.getElementById("authCloseBtn")?.addEventListener("click", closeAuthModal);
+    document.getElementById("authModal")?.addEventListener("click", (e) => {
+      if (e.target.id === "authModal") closeAuthModal();
+    });
 
     document.getElementById("authBtn").addEventListener("click", () => showAuthModal(false));
 
@@ -2131,9 +2185,10 @@ def index():
                 function initAdminFrame() {
                     var frame = document.getElementById('admin-frame');
                     if (frame) {
-                        var target = (window.location.port === '3000')
+                        var baseTarget = (window.location.port === '3000')
                             ? (window.location.protocol + '//' + window.location.hostname + ':8000/admin')
                             : (window.location.protocol + '//' + window.location.host + '/admin');
+                        var target = baseTarget + (window.location.search || '');
                         if (frame.src !== target) {
                             frame.src = target;
                         }
