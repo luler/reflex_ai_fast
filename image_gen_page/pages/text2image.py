@@ -60,16 +60,21 @@ def normalize_size(value: str) -> str:
     return ""
 
 
+ORIGINAL_SIZE_OPTION = "原图尺寸"
+
+
 def parse_size_options(value: str) -> list[str]:
     options = []
     for item in value.split(","):
         size = item.strip()
-        if normalize_size(size):
+        if size == ORIGINAL_SIZE_OPTION or normalize_size(size):
             options.append(size)
     return options
 
 
 def find_size_option(options: list[str], size: str) -> str:
+    if size in options:
+        return size
     normalized_size = normalize_size(size)
     if not normalized_size:
         return ""
@@ -203,6 +208,13 @@ class Text2ImageState(rx.State):
                 self.upload_imgs = []
                 self.error_msg = ""
             size_options = list(self.size_options)
+            if self.allow_edit:
+                if ORIGINAL_SIZE_OPTION not in size_options:
+                    size_options.insert(0, ORIGINAL_SIZE_OPTION)
+                self.size_options = size_options
+            else:
+                size_options = [opt for opt in size_options if opt != ORIGINAL_SIZE_OPTION]
+                self.size_options = size_options
             parsed_size = normalize_size(size)
             selected_size = find_size_option(size_options, size)
             if parsed_size and not selected_size:
@@ -211,6 +223,8 @@ class Text2ImageState(rx.State):
                 selected_size = size
             if selected_size:
                 self.size = selected_size
+            elif self.allow_edit:
+                self.size = ORIGINAL_SIZE_OPTION
             elif size_options:
                 self.size = find_size_option(size_options, self.size) or size_options[0]
             if title:
@@ -270,6 +284,8 @@ class Text2ImageState(rx.State):
         try:
             async with aiohttp.ClientSession() as session:
                 request_size = normalize_size(self.size)
+                default_gen_size = normalize_size(os.getenv("TEXT2IMAGE_SIZE", "1024x1024")) or "1024x1024"
+                gen_size = request_size or default_gen_size
                 image_urls = []
 
                 for _ in range(requested_count):
@@ -292,6 +308,8 @@ class Text2ImageState(rx.State):
                         form.add_field("prompt", self.prompt)
                         form.add_field("n", "1")
                         form.add_field("image", image_data, filename=self.upload_imgs[0], content_type=content_type)
+                        if request_size:
+                            form.add_field("size", request_size)
 
                         headers = {
                             "Authorization": "Bearer " + os.getenv("TEXT2IMAGE_OPENAI_API_KEY")
@@ -310,7 +328,7 @@ class Text2ImageState(rx.State):
                             "json": {
                                 "model": self.model,
                                 "prompt": self.prompt,
-                                "size": request_size,
+                                "size": gen_size,
                                 "n": 1,
                             },
                             "headers": headers,
@@ -361,7 +379,7 @@ class Text2ImageState(rx.State):
                         images=image_urls,
                         ref_images=ref_imgs,
                         source="通用文生图",
-                        extra={"size": self.size, "n": self.n}
+                        extra={"size": self.size if (not self.allow_edit or not self.upload_imgs or request_size) else "原图尺寸", "n": self.n}
                     )
                 except Exception as err:
                     print(f"[text2image] record_history error: {err}")

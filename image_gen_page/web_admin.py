@@ -149,7 +149,7 @@ async def _save_single_image(img_data_or_url: str, dest_filename: str) -> str:
         return ""
 
     # 1. Base64 数据处理
-    if img_data_or_url.startswith("data:image/"):
+    if img_data_or_url.startswith("data:"):
         try:
             header, encoded = img_data_or_url.split(",", 1)
             raw_bytes = base64.b64decode(encoded)
@@ -214,10 +214,15 @@ async def _process_and_save_record(
         saved_images = []
         for i, img in enumerate(images):
             ext = "png"
-            if isinstance(img, str) and "." in img and not img.startswith("data:"):
-                potential_ext = img.split("?")[0].split(".")[-1].lower()
-                if potential_ext in ["jpg", "jpeg", "png", "webp", "gif", "mp4"]:
-                    ext = potential_ext
+            if isinstance(img, str):
+                if img.startswith("data:image/webp") or (img.startswith("data:") and "UklGR" in img[:35]):
+                    ext = "webp"
+                elif img.startswith("data:image/jpeg"):
+                    ext = "jpg"
+                elif "." in img and not img.startswith("data:"):
+                    potential_ext = img.split("?")[0].split(".")[-1].lower()
+                    if potential_ext in ["jpg", "jpeg", "png", "webp", "gif", "mp4"]:
+                        ext = potential_ext
             dest_name = f"{record_id}_{i}.{ext}"
             saved_path = await _save_single_image(img, dest_name)
             saved_images.append(saved_path)

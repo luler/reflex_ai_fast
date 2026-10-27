@@ -55,5 +55,18 @@ async def image_url_to_data_url(session: aiohttp.ClientSession, image_url: str) 
             raise ValueError(f"HTTP {response.status}")
 
         image_data = await response.read()
-        content_type = response.headers.get("Content-Type", "image/png").split(";")[0]
+        content_type = response.headers.get("Content-Type", "image/png").split(";")[0].strip().lower()
+        if not content_type or content_type in ("application/octet-stream", "binary/octet-stream"):
+            if image_data.startswith(b"RIFF") and b"WEBP" in image_data[:16]:
+                content_type = "image/webp"
+            elif image_data.startswith(b"\x89PNG"):
+                content_type = "image/png"
+            elif image_data.startswith(b"\xff\xd8\xff"):
+                content_type = "image/jpeg"
+            elif image_url.lower().split("?")[0].endswith(".webp"):
+                content_type = "image/webp"
+            elif image_url.lower().split("?")[0].endswith((".jpg", ".jpeg")):
+                content_type = "image/jpeg"
+            else:
+                content_type = "image/png"
         return image_data_to_base64(image_data, content_type)

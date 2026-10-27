@@ -18,7 +18,7 @@ OPENAI_API_KEY=sk-xxx
 一定要正确指定API_URL，保持与前端代码可以访问的域名、ip一致即可
 
 ```
-REFLEX_USE_NPM=1 API_URL=http://127.0.0.1:8080 reflex export --frontend-only
+REFLEX_USE_NPM=1 API_URL=https://reflex.ff.luler.top reflex export --frontend-only
 ```
 
 执行上面导出命令之后，会生成frontend.zip文件到目录下
