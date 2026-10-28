@@ -11,26 +11,15 @@ import reflex as rx
 
 from image_gen_page.tool.common_tool import image_url_to_data_url
 
-_quota_lock = asyncio.Lock()
-_quota_usage: dict[tuple[str, str], int] = {}
-
-
-def parse_quota(value: str, default: int = -1) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-async def reserve_generation_quota(open_id: str, requested_count: int, daily_limit: int) -> tuple[bool, int]:
-    async with _quota_lock:
-        quota_key = (open_id, date.today().isoformat())
-        used = _quota_usage.get(quota_key, 0)
-        if used + requested_count > daily_limit:
-            return False, used
-        used += requested_count
-        _quota_usage[quota_key] = used
-        return True, used
+from image_gen_page.quota_service import (
+    parse_quota,
+    parse_model_quotas,
+    resolve_model_quota,
+    reserve_generation_quota,
+    get_quota_exceeded_msg,
+    reset_quota,
+    _quota_usage,
+)
 
 
 def normalize_size(value: str) -> str:
@@ -113,8 +102,10 @@ class Text2ImageState(rx.State):
     n_options = ["1", "2", "3", "4"]
 
     title = "通用文生图生成器"
-    open_id = ""
+    open_id: str = ""
     daily_limit: int = -1
+    quota_raw: str = ""
+    quota_extra: dict[str, str] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -192,7 +183,12 @@ class Text2ImageState(rx.State):
         title = get_param("title").strip()[:60]
         edit = get_param("edit", "0").strip()
         open_id = get_param("open_id").strip()[:128]
-        daily_limit = parse_quota(get_param("quota"), -1)
+        quota_raw = get_param("quota").strip()
+        extra_quota_params = {
+            k.lower(): v[0] if isinstance(v, list) else str(v)
+            for k, v in params.items()
+            if k.lower().startswith("quota_") or k.lower().startswith("quota[")
+        }
 
         async with self:
             if model and model in self.available_models:
@@ -230,7 +226,14 @@ class Text2ImageState(rx.State):
             if title:
                 self.title = title
             self.open_id = open_id
-            self.daily_limit = daily_limit
+            self.quota_raw = quota_raw
+            self.quota_extra = extra_quota_params
+            self.daily_limit = resolve_model_quota(
+                model=self.model,
+                quota_raw=quota_raw,
+                extra_params=extra_quota_params,
+                scope_category="image",
+            )
 
             self.initialized_from_url = True
 
@@ -269,11 +272,30 @@ class Text2ImageState(rx.State):
 
         requested_count = int(self.n)
         open_id = self.open_id
-        daily_limit = self.daily_limit
+        current_model = (self.model or "default").strip()
+        model_scope = current_model.lower()
+        daily_limit = resolve_model_quota(
+            model=current_model,
+            quota_raw=self.quota_raw,
+            extra_params=self.quota_extra,
+            scope_category="image",
+        )
         if daily_limit >= 0:
-            allowed, used = await reserve_generation_quota(open_id, requested_count, daily_limit)
+            allowed, used = await reserve_generation_quota(
+                open_id=open_id,
+                requested_count=requested_count,
+                daily_limit=daily_limit,
+                scope=model_scope,
+            )
             if not allowed:
-                yield rx.window_alert("请求过于频繁，请稍后再试。")
+                yield rx.window_alert(
+                    get_quota_exceeded_msg(
+                        scope=model_scope,
+                        model=current_model,
+                        limit=daily_limit,
+                        used=used,
+                    )
+                )
                 return
 
         async with self:

@@ -32,6 +32,7 @@ import reflex as rx
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 from starlette.staticfiles import StaticFiles
+from image_gen_page.quota_service import reset_quota, get_quota_status
 
 # 存储路径配置：保存在 uploaded_files/history_records 目录下，适配已有 Docker 卷挂载
 BASE_DIR = Path("uploaded_files")
@@ -63,8 +64,9 @@ def is_auth_valid(req: Request) -> bool:
         elif len(parts) == 1 and parts[0] == auth_key_env:
             return True
 
-    # 2. 检查 Query 参数 ?auth_key=<AUTH_KEY>
-    if req.query_params.get("auth_key") == auth_key_env:
+    # 2. 检查 Query 参数 ?auth_key=<AUTH_KEY> 或 ?key=<AUTH_KEY>
+    param_key = req.query_params.get("auth_key") or req.query_params.get("key")
+    if param_key == auth_key_env:
         return True
 
     return False
@@ -2199,25 +2201,60 @@ def setup_admin(app: rx.App):
     app._api.add_route("/admin/api/records/{id}", api_delete_single, methods=["DELETE"])
     app._api.add_route("/admin/api/records/batch_delete", api_delete_batch, methods=["POST"])
 
-    # 兼容历史别名路由
-    app._api.add_route("/manage", serve_admin_page, methods=["GET"])
-    app._api.add_route("/history", serve_admin_page, methods=["GET"])
-    app._api.add_route("/api/admin/verify", api_verify, methods=["POST", "GET"])
-    app._api.add_route("/api/admin/records", api_records, methods=["GET"])
-    app._api.add_route("/api/admin/stats", api_stats, methods=["GET"])
-    app._api.add_route("/api/admin/records/{id}", api_delete_single, methods=["DELETE"])
-    app._api.add_route("/api/admin/records/batch_delete", api_delete_batch, methods=["POST"])
+    # 额度重置与状态查询 API（统一保留 /admin/api/xxx）
+    async def api_reset_quota(req: Request):
+        if not is_auth_valid(req):
+            return JSONResponse(
+                {"ok": False, "error": "Unauthorized / 授权失败：管理授权码 (auth_key) 错误或缺失"},
+                status_code=401,
+            )
 
-    # 6. 挂载持久化图片静态资源服务（优先 /admin/history_files，同时保留 /history_files 兼容）
+        open_id = req.query_params.get("open_id", "").strip()
+        if not open_id:
+            return JSONResponse(
+                {"ok": False, "error": "Missing open_id parameter / 缺少必需参数 open_id"},
+                status_code=400,
+            )
+
+        scope = req.query_params.get("scope", "all").strip().lower()
+        cleared_count = await reset_quota(open_id=open_id, scope=scope)
+
+        return JSONResponse(
+            {
+                "ok": True,
+                "message": f"open_id [{open_id}] 额度已成功重置",
+                "open_id": open_id,
+                "scope": scope,
+                "cleared_records": cleared_count,
+            }
+        )
+
+    async def api_get_quota_status(req: Request):
+        if not is_auth_valid(req):
+            return JSONResponse(
+                {"ok": False, "error": "Unauthorized / 授权失败：管理授权码 (auth_key) 错误或缺失"},
+                status_code=401,
+            )
+
+        open_id = req.query_params.get("open_id", "").strip()
+        if not open_id:
+            return JSONResponse(
+                {"ok": False, "error": "Missing open_id parameter / 缺少必需参数 open_id"},
+                status_code=400,
+            )
+
+        status_info = await get_quota_status(open_id=open_id)
+        return JSONResponse({"ok": True, "data": status_info})
+
+    app._api.add_route("/admin/api/reset_quota", api_reset_quota, methods=["GET", "POST"])
+    app._api.add_route("/admin/api/quota/reset", api_reset_quota, methods=["GET", "POST"])
+    app._api.add_route("/admin/api/quota/status", api_get_quota_status, methods=["GET"])
+
+    # 挂载持久化图片静态资源服务（仅保留 /admin/history_files）
     app._api.mount(
         "/admin/history_files",
         StaticFiles(directory=str(HISTORY_DIR)),
         name="admin_history_files",
-    )
-    app._api.mount(
-        "/history_files",
-        StaticFiles(directory=str(HISTORY_DIR)),
-        name="history_files",
     )
 
 

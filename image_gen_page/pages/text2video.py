@@ -11,26 +11,15 @@ from urllib.parse import parse_qs, urlparse
 import aiohttp
 import reflex as rx
 
-_quota_lock = asyncio.Lock()
-_quota_usage: dict[tuple[str, str], int] = {}
-
-
-def parse_quota(value: str, default: int = -1) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-async def reserve_generation_quota(open_id: str, requested_count: int, daily_limit: int) -> tuple[bool, int]:
-    async with _quota_lock:
-        quota_key = (open_id, date.today().isoformat())
-        used = _quota_usage.get(quota_key, 0)
-        if used + requested_count > daily_limit:
-            return False, used
-        used += requested_count
-        _quota_usage[quota_key] = used
-        return True, used
+from image_gen_page.quota_service import (
+    parse_quota,
+    parse_model_quotas,
+    resolve_model_quota,
+    reserve_generation_quota,
+    get_quota_exceeded_msg,
+    reset_quota,
+    _quota_usage,
+)
 
 
 DEFAULT_SIZE_OPTIONS = [
@@ -299,6 +288,8 @@ class Text2VideoState(rx.State):
     title: str = os.getenv("TEXT2VIDEO_TITLE", "通用文生视频生成器")[:60]
     open_id: str = ""
     daily_limit: int = -1
+    quota_raw: str = ""
+    quota_extra: dict[str, str] = {}
 
     def set_prompt(self, prompt: str):
         self.prompt = prompt
@@ -353,7 +344,12 @@ class Text2VideoState(rx.State):
         title = get_param("title").strip()[:60]
         edit = get_param("edit").strip()
         open_id = get_param("open_id").strip()[:128]
-        daily_limit = parse_quota(get_param("quota"), -1)
+        quota_raw = get_param("quota").strip()
+        extra_quota_params = {
+            k.lower(): v[0] if isinstance(v, list) else str(v)
+            for k, v in params.items()
+            if k.lower().startswith("quota_") or k.lower().startswith("quota[")
+        }
 
         async with self:
             available = default_models.copy()
@@ -402,7 +398,14 @@ class Text2VideoState(rx.State):
                 self.title = os.getenv("TEXT2VIDEO_TITLE", "通用文生视频生成器")[:60]
 
             self.open_id = open_id
-            self.daily_limit = daily_limit
+            self.quota_raw = quota_raw
+            self.quota_extra = extra_quota_params
+            self.daily_limit = resolve_model_quota(
+                model=self.model,
+                quota_raw=quota_raw,
+                extra_params=extra_quota_params,
+                scope_category="video",
+            )
 
             self.initialized_from_url = True
 
@@ -440,11 +443,30 @@ class Text2VideoState(rx.State):
         start_time = time.time()
 
         open_id = self.open_id
-        daily_limit = self.daily_limit
+        current_model = (self.model or "default").strip()
+        model_scope = current_model.lower()
+        daily_limit = resolve_model_quota(
+            model=current_model,
+            quota_raw=self.quota_raw,
+            extra_params=self.quota_extra,
+            scope_category="video",
+        )
         if daily_limit >= 0:
-            allowed, used = await reserve_generation_quota(open_id, 1, daily_limit)
+            allowed, used = await reserve_generation_quota(
+                open_id=open_id,
+                requested_count=1,
+                daily_limit=daily_limit,
+                scope=model_scope,
+            )
             if not allowed:
-                yield rx.window_alert("今日生成次数已达上限，请明天再试！")
+                yield rx.window_alert(
+                    get_quota_exceeded_msg(
+                        scope=model_scope,
+                        model=current_model,
+                        limit=daily_limit,
+                        used=used,
+                    )
+                )
                 return
 
         async with self:
