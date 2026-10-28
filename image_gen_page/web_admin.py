@@ -177,10 +177,10 @@ async def _save_single_image(img_data_or_url: str, dest_filename: str) -> str:
         except Exception as e:
             print(f"[web_admin] 复制 uploaded_files 本地图片失败: {e}")
 
-    # 3. HTTP / HTTPS 远程图片下载
+    # 3. HTTP / HTTPS 远程图片/视频下载
     if img_data_or_url.startswith("http://") or img_data_or_url.startswith("https://"):
         try:
-            timeout = aiohttp.ClientTimeout(total=25)
+            timeout = aiohttp.ClientTimeout(total=90)
             async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(img_data_or_url) as resp:
                     if resp.status == 200:
@@ -189,10 +189,10 @@ async def _save_single_image(img_data_or_url: str, dest_filename: str) -> str:
                             f.write(content)
                         return web_path
                     else:
-                        print(f"[web_admin] 下载远程图片失败，HTTP {resp.status}")
+                        print(f"[web_admin] 下载远程媒体失败，HTTP {resp.status}")
                         return img_data_or_url
         except Exception as e:
-            print(f"[web_admin] 下载远程图片异常: {e}")
+            print(f"[web_admin] 下载远程媒体异常: {e}")
             return img_data_or_url
 
     return img_data_or_url
@@ -221,7 +221,7 @@ async def _process_and_save_record(
                     ext = "jpg"
                 elif "." in img and not img.startswith("data:"):
                     potential_ext = img.split("?")[0].split(".")[-1].lower()
-                    if potential_ext in ["jpg", "jpeg", "png", "webp", "gif", "mp4"]:
+                    if potential_ext in ["jpg", "jpeg", "png", "webp", "gif", "mp4", "webm", "mov"]:
                         ext = potential_ext
             dest_name = f"{record_id}_{i}.{ext}"
             saved_path = await _save_single_image(img, dest_name)
@@ -1387,6 +1387,7 @@ def get_admin_html() -> str:
         <button id="lbPrevBtn" class="nav-arrow nav-prev">◀</button>
         <div class="lightbox-img-wrapper">
           <img id="lbMainImg" class="lightbox-img" src="" alt="预览图">
+          <video id="lbMainVideo" class="lightbox-img" controls autoplay loop playsinline style="display:none; max-height:70vh; max-width:90vw; width:auto; border-radius:8px;"></video>
         </div>
         <button id="lbNextBtn" class="nav-arrow nav-next">▶</button>
       </div>
@@ -1622,6 +1623,12 @@ def get_admin_html() -> str:
     }
 
     // 渲染表格
+    function isMediaVideo(url) {
+      if (!url) return false;
+      const clean = String(url).toLowerCase().split("?")[0];
+      return clean.endsWith(".mp4") || clean.endsWith(".webm") || clean.endsWith(".mov");
+    }
+
     function renderTable(records) {
       const tbody = document.getElementById("recordsTableBody");
       updateBatchBar();
@@ -1650,14 +1657,29 @@ def get_admin_html() -> str:
         const firstRefImg = (r.ref_images && r.ref_images.length > 0) ? getApiUrl(r.ref_images[0]) : "";
         const durationStr = r.duration ? `${r.duration}s` : "0s";
         const extraSize = r.extra && r.extra.size ? r.extra.size : "";
+        const isVideoGen = isMediaVideo(firstGenImg) || (r.source && r.source.includes("视频")) || (r.model && r.model.includes("video"));
 
-        // 生成图缩略
-        const resultThumbHtml = firstGenImg ? `
-          <div class="thumb-box" onclick="openLightbox('${r.id}', 0)">
-            <img src="${firstGenImg}" class="thumb-img" alt="生成结果" loading="lazy" onerror="handleImgError(this)">
-            <div class="thumb-hover-overlay">👁️ 预览</div>
-          </div>
-        ` : `<div class="no-ref-badge">无结果图</div>`;
+        // 生成图/视频缩略
+        let resultThumbHtml;
+        if (firstGenImg) {
+          if (isVideoGen) {
+            resultThumbHtml = `
+              <div class="thumb-box" onclick="openLightbox('${r.id}', 0)">
+                <video src="${firstGenImg}#t=0.1" class="thumb-img" preload="metadata" muted playsinline style="pointer-events:none;"></video>
+                <div class="thumb-hover-overlay">▶️ 播放</div>
+              </div>
+            `;
+          } else {
+            resultThumbHtml = `
+              <div class="thumb-box" onclick="openLightbox('${r.id}', 0)">
+                <img src="${firstGenImg}" class="thumb-img" alt="生成结果" loading="lazy" onerror="handleImgError(this)">
+                <div class="thumb-hover-overlay">👁️ 预览</div>
+              </div>
+            `;
+          }
+        } else {
+          resultThumbHtml = `<div class="no-ref-badge">无结果</div>`;
+        }
 
         // 参考图缩略
         const refThumbHtml = firstRefImg ? `
@@ -1701,9 +1723,9 @@ def get_admin_html() -> str:
             </td>
             <td class="col-actions" style="text-align: right;">
               <div class="action-cell">
-                <button class="btn btn-sm btn-primary" onclick="openLightbox('${r.id}', 0)" title="全景预览高清大图与提示词">👁️ 预览</button>
+                <button class="btn btn-sm btn-primary" onclick="openLightbox('${r.id}', 0)" title="${isVideoGen ? '全景播放视频与查看提示词' : '全景预览高清大图与提示词'}">${isVideoGen ? '▶️ 播放' : '👁️ 预览'}</button>
                 <button class="btn btn-sm" onclick="copyRecordPrompt('${r.id}')" title="复制此生成提示词">📋 复制</button>
-                ${firstGenImg ? `<a href="${firstGenImg}" class="btn btn-sm" download="image_${r.id.slice(0,8)}.png" title="直接下载高清结果原图">📥 下载</a>` : ''}
+                ${firstGenImg ? `<a href="${firstGenImg}" class="btn btn-sm" download="${isVideoGen ? 'video_' : 'image_'}${r.id.slice(0,8)}.${isVideoGen ? 'mp4' : 'png'}" title="${isVideoGen ? '直接下载高清视频' : '直接下载高清结果原图'}">📥 下载</a>` : ''}
                 <button class="btn btn-sm btn-danger" onclick="deleteSingle('${r.id}')" title="彻底删除此记录">🗑️</button>
               </div>
             </td>
@@ -1864,24 +1886,29 @@ def get_admin_html() -> str:
       currentLightbox.record = r;
       currentLightbox.imagesList = [];
 
-      // 填充可预览图片列表
+      // 填充可预览图片/视频列表
       (r.images || []).forEach((url, i) => {
+        const fullUrl = getApiUrl(url);
+        const isVid = isMediaVideo(fullUrl) || (r.source && r.source.includes("视频")) || (r.model && r.model.includes("video"));
         currentLightbox.imagesList.push({
-          url: getApiUrl(url),
-          label: (r.images.length > 1) ? `🖼️ 生成图 #${i+1}` : `🖼️ 生成结果`,
-          type: "gen"
+          url: fullUrl,
+          label: (r.images.length > 1) ? `${isVid ? '🎬 视频' : '🖼️ 生成图'} #${i+1}` : (isVid ? `🎬 视频结果` : `🖼️ 生成结果`),
+          type: "gen",
+          isVideo: isVid
         });
       });
       (r.ref_images || []).forEach((url, i) => {
+        const fullUrl = getApiUrl(url);
         currentLightbox.imagesList.push({
-          url: getApiUrl(url),
+          url: fullUrl,
           label: (r.ref_images.length > 1) ? `📎 参考图 #${i+1}` : `📎 参考原图`,
-          type: "ref"
+          type: "ref",
+          isVideo: isMediaVideo(fullUrl)
         });
       });
 
       if (currentLightbox.imagesList.length === 0) {
-        showToast("此记录无可用预览图片", true);
+        showToast("此记录无可用预览图片或视频", true);
         return;
       }
 
@@ -1927,11 +1954,38 @@ def get_admin_html() -> str:
 
       const item = currentLightbox.imagesList[index];
       const mainImg = document.getElementById("lbMainImg");
-      mainImg.style.opacity = "0.3";
-      mainImg.src = item.url;
-      mainImg.onload = () => { mainImg.style.opacity = "1"; };
+      const mainVideo = document.getElementById("lbMainVideo");
+      const downloadBtn = document.getElementById("lbDownloadBtn");
 
-      document.getElementById("lbDownloadBtn").href = item.url;
+      if (item.isVideo) {
+        if (mainImg) mainImg.style.display = "none";
+        if (mainVideo) {
+          mainVideo.style.display = "block";
+          mainVideo.src = item.url;
+          mainVideo.play().catch(() => {});
+        }
+        if (downloadBtn) {
+          downloadBtn.download = `video_${(currentLightbox.record?.id || 'media').slice(0, 8)}.mp4`;
+          downloadBtn.innerText = "📥 下载视频";
+        }
+      } else {
+        if (mainVideo) {
+          mainVideo.pause();
+          mainVideo.style.display = "none";
+        }
+        if (mainImg) {
+          mainImg.style.display = "block";
+          mainImg.style.opacity = "0.3";
+          mainImg.src = item.url;
+          mainImg.onload = () => { mainImg.style.opacity = "1"; };
+        }
+        if (downloadBtn) {
+          downloadBtn.download = `image_${(currentLightbox.record?.id || 'media').slice(0, 8)}.png`;
+          downloadBtn.innerText = "📥 下载原图";
+        }
+      }
+
+      if (downloadBtn) downloadBtn.href = item.url;
       document.getElementById("lbImageIndexIndicator").innerText = `${index + 1} / ${currentLightbox.imagesList.length}`;
 
       // 更新 Tab 按钮状态
@@ -1964,6 +2018,11 @@ def get_admin_html() -> str:
     });
 
     function closeLightbox() {
+      const mainVideo = document.getElementById("lbMainVideo");
+      if (mainVideo) {
+        mainVideo.pause();
+        mainVideo.src = "";
+      }
       document.getElementById("lightboxModal").classList.remove("active");
     }
 

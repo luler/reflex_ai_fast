@@ -4,7 +4,7 @@ import dotenv
 import reflex as rx
 
 from image_gen_page.pages import jimeng, gpt4o, cover, kontext, aichart, geminiImage, grokImage, grokVideo, mondo, \
-    text2image
+    text2image, text2video
 from image_gen_page import web_admin
 
 # 初始化配置
@@ -27,7 +27,8 @@ app.add_page(mondo.index, route='/mondo', title="基于 Nano Banana 模型的大
 app.add_page(aichart.index, route='/aichart', title="AI 统计图表生成器")
 app.add_page(text2image.index, route='/text2image', title="通用文生图生成器",
              on_load=text2image.Text2ImageState.init_from_url)
+app.add_page(text2video.index, route='/text2video', title="通用文生视频生成器",
+             on_load=text2video.Text2VideoState.init_from_url)
 
 # 注册管理后台与历史记录管理页面
 web_admin.setup_admin(app)
-
