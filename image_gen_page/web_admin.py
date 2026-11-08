@@ -2258,7 +2258,6 @@ def setup_admin(app: rx.App):
             status_info["union_id"] = union_id
         return JSONResponse({"ok": True, "data": status_info})
 
-    app._api.add_route("/admin/api/reset_quota", api_reset_quota, methods=["GET", "POST"])
     app._api.add_route("/admin/api/quota/reset", api_reset_quota, methods=["GET", "POST"])
     app._api.add_route("/admin/api/quota/status", api_get_quota_status, methods=["GET"])
 

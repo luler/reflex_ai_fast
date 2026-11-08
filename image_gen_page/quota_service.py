@@ -402,7 +402,7 @@ async def get_quota_status(open_id: str) -> dict:
                 })
 
             return {
-                "open_id": clean_open_id,
+                "union_id": clean_open_id,
                 "today": today_str,
                 "today_usage": today_usage,
                 "usage": usage_map,
