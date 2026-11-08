@@ -98,10 +98,10 @@ class Text2ImageState(rx.State):
     n_options = ["1", "2", "3", "4"]
 
     title = "通用文生图生成器"
+    union_id: str = ""
     open_id: str = ""
     daily_limit: int = -1
     quota_raw: str = ""
-    quota_extra: dict[str, str] = {}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -150,6 +150,11 @@ class Text2ImageState(rx.State):
 
     def set_model(self, model: str):
         self.model = model
+        self.daily_limit = resolve_model_quota(
+            model=model,
+            quota_raw=self.quota_raw,
+            scope_category="image",
+        )
         self.n = self.model_count_dict.get(model, self.n_options[0])
         if not self.allow_edit:
             self.upload_imgs = []
@@ -178,13 +183,8 @@ class Text2ImageState(rx.State):
         url_size_options = parse_size_options(get_param("sizes"))
         title = get_param("title").strip()[:60]
         edit = get_param("edit", "0").strip()
-        open_id = get_param("union_id").strip()[:128]
+        union_id = get_param("union_id").strip()[:128]
         quota_raw = get_param("quota").strip()
-        extra_quota_params = {
-            k.lower(): v[0] if isinstance(v, list) else str(v)
-            for k, v in params.items()
-            if k.lower().startswith("quota_") or k.lower().startswith("quota[")
-        }
 
         async with self:
             if model and model in self.available_models:
@@ -221,13 +221,12 @@ class Text2ImageState(rx.State):
                 self.size = find_size_option(size_options, self.size) or size_options[0]
             if title:
                 self.title = title
-            self.open_id = open_id
+            self.union_id = union_id
+            self.open_id = union_id
             self.quota_raw = quota_raw
-            self.quota_extra = extra_quota_params
             self.daily_limit = resolve_model_quota(
                 model=self.model,
                 quota_raw=quota_raw,
-                extra_params=extra_quota_params,
                 scope_category="image",
             )
 
@@ -267,18 +266,17 @@ class Text2ImageState(rx.State):
         start_time = time.time()
 
         requested_count = int(self.n)
-        open_id = self.open_id
+        union_id = self.union_id or self.open_id
         current_model = (self.model or "default").strip()
         model_scope = current_model.lower()
         daily_limit = resolve_model_quota(
             model=current_model,
             quota_raw=self.quota_raw,
-            extra_params=self.quota_extra,
             scope_category="image",
         )
         if daily_limit >= 0:
             allowed, used = await reserve_generation_quota(
-                open_id=open_id,
+                union_id=union_id,
                 requested_count=requested_count,
                 daily_limit=daily_limit,
                 scope=model_scope,
@@ -290,6 +288,7 @@ class Text2ImageState(rx.State):
                         model=current_model,
                         limit=daily_limit,
                         used=used,
+                        category="image",
                     )
                 )
                 return
@@ -397,7 +396,11 @@ class Text2ImageState(rx.State):
                         images=image_urls,
                         ref_images=ref_imgs,
                         source="通用文生图",
-                        extra={"size": self.size if (not self.allow_edit or not self.upload_imgs or request_size) else "原图尺寸", "n": self.n}
+                        extra={
+                            "size": self.size if (not self.allow_edit or not self.upload_imgs or request_size) else "原图尺寸",
+                            "n": self.n,
+                            "union_id": self.union_id or self.open_id,
+                        }
                     )
                 except Exception as err:
                     print(f"[text2image] record_history error: {err}")

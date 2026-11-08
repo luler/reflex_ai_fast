@@ -282,10 +282,10 @@ class Text2VideoState(rx.State):
     duration_options: list[str] = get_default_durations()
 
     title: str = os.getenv("TEXT2VIDEO_TITLE", "通用文生视频生成器")[:60]
+    union_id: str = ""
     open_id: str = ""
     daily_limit: int = -1
     quota_raw: str = ""
-    quota_extra: dict[str, str] = {}
 
     def set_prompt(self, prompt: str):
         self.prompt = prompt
@@ -305,6 +305,11 @@ class Text2VideoState(rx.State):
 
     def set_model(self, model: str):
         self.model = model
+        self.daily_limit = resolve_model_quota(
+            model=model,
+            quota_raw=self.quota_raw,
+            scope_category="video",
+        )
         if not self.allow_edit:
             self.upload_imgs = []
             self.error_msg = ""
@@ -339,13 +344,8 @@ class Text2VideoState(rx.State):
         url_duration_options = parse_duration_options(get_param("durations"))
         title = get_param("title").strip()[:60]
         edit = get_param("edit").strip()
-        open_id = get_param("union_id").strip()[:128]
+        union_id = get_param("union_id").strip()[:128]
         quota_raw = get_param("quota").strip()
-        extra_quota_params = {
-            k.lower(): v[0] if isinstance(v, list) else str(v)
-            for k, v in params.items()
-            if k.lower().startswith("quota_") or k.lower().startswith("quota[")
-        }
 
         async with self:
             available = default_models.copy()
@@ -393,13 +393,12 @@ class Text2VideoState(rx.State):
             else:
                 self.title = os.getenv("TEXT2VIDEO_TITLE", "通用文生视频生成器")[:60]
 
-            self.open_id = open_id
+            self.union_id = union_id
+            self.open_id = union_id
             self.quota_raw = quota_raw
-            self.quota_extra = extra_quota_params
             self.daily_limit = resolve_model_quota(
                 model=self.model,
                 quota_raw=quota_raw,
-                extra_params=extra_quota_params,
                 scope_category="video",
             )
 
@@ -438,18 +437,17 @@ class Text2VideoState(rx.State):
 
         start_time = time.time()
 
-        open_id = self.open_id
+        union_id = self.union_id or self.open_id
         current_model = (self.model or "default").strip()
         model_scope = current_model.lower()
         daily_limit = resolve_model_quota(
             model=current_model,
             quota_raw=self.quota_raw,
-            extra_params=self.quota_extra,
             scope_category="video",
         )
         if daily_limit >= 0:
             allowed, used = await reserve_generation_quota(
-                open_id=open_id,
+                union_id=union_id,
                 requested_count=1,
                 daily_limit=daily_limit,
                 scope=model_scope,
@@ -461,6 +459,7 @@ class Text2VideoState(rx.State):
                         model=current_model,
                         limit=daily_limit,
                         used=used,
+                        category="video",
                     )
                 )
                 return
@@ -654,7 +653,11 @@ class Text2VideoState(rx.State):
                             images=[final_video_url],
                             ref_images=ref_imgs,
                             source="通用文生视频",
-                            extra={"size": norm_size, "duration": self.duration},
+                            extra={
+                                "size": norm_size,
+                                "duration": self.duration,
+                                "union_id": self.union_id or self.open_id,
+                            },
                         )
                     except Exception as err:
                         print(f"[text2video] record_history error: {err}")

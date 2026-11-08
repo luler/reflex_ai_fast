@@ -2227,7 +2227,7 @@ def setup_admin(app: rx.App):
                 status_code=400,
             )
 
-        cleared_count = await reset_quota(open_id=union_id, scope=scope)
+        cleared_count = await reset_quota(union_id=union_id, scope=scope)
 
         return JSONResponse(
             {
@@ -2247,16 +2247,27 @@ def setup_admin(app: rx.App):
             )
 
         union_id = req.query_params.get("union_id", "").strip()
-        if not union_id:
-            return JSONResponse(
-                {"ok": False, "error": "Missing union_id parameter / 缺少必需参数 union_id"},
-                status_code=400,
-            )
+        try:
+            page = int(req.query_params.get("page", 1))
+        except (ValueError, TypeError):
+            page = 1
 
-        status_info = await get_quota_status(open_id=union_id)
-        if isinstance(status_info, dict):
-            status_info["union_id"] = union_id
-        return JSONResponse({"ok": True, "data": status_info})
+        try:
+            page_size = int(req.query_params.get("page_size", 100))
+        except (ValueError, TypeError):
+            page_size = 100
+
+        result = await get_quota_status(union_id=union_id, page=page, page_size=page_size)
+        return JSONResponse(
+            {
+                "ok": True,
+                "page": result["page"],
+                "page_size": result["page_size"],
+                "total": result["total"],
+                "total_pages": result["total_pages"],
+                "data": result["items"],
+            }
+        )
 
     app._api.add_route("/admin/api/quota/reset", api_reset_quota, methods=["GET", "POST"])
     app._api.add_route("/admin/api/quota/status", api_get_quota_status, methods=["GET"])

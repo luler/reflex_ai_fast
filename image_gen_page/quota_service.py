@@ -3,14 +3,14 @@
 
 功能：
 1. 区分不同模型的独立额度计数与上限对比；
-2. 支持 URL 参数灵活配置额度（单数值、多模型键值对如 muse-video:10,zimage:5、JSON等）；
+2. 支持 URL 传入纯数字参数配置当前模型配额；
 3. 支持 .env 配置各模型独立额度及超额提示词；
 4. 基于 SQLite 本地持久化（history.db），保证服务重启不丢失当天累加额度；
 5. 支持动态调整 quota（如当天已用6次，quota由10调整为5时，当天累加6次保持不变，新对比立即判定超额并拦截）；
 6. 提供跨进程线程安全的原子扣减与重置接口。
 """
 
-import json
+import math
 import os
 import re
 import sqlite3
@@ -67,130 +67,45 @@ def parse_quota(value: str, default: int = -1) -> int:
         return default
 
 
-def parse_model_quotas(quota_str: str) -> dict[str, int]:
-    """解析 quota 参数为多模型配额映射字典。
-    
-    支持格式：
-    1. 纯数字："5" -> {"*": 5}（对所有模型各生效5次）
-    2. 键值对字符串："muse-video:10,zimage:5,*:2" 或 "muse-video=10;zimage=5"
-    3. JSON字符串：'{"muse-video": 10, "zimage": 5, "default": 2}'
-    """
-    if not quota_str or not str(quota_str).strip():
-        return {}
-
-    text = str(quota_str).strip()
-
-    # 1. 尝试纯数字
-    try:
-        val = int(text)
-        return {"*": val}
-    except ValueError:
-        pass
-
-    # 2. 尝试 JSON
-    if text.startswith("{") and text.endswith("}"):
-        try:
-            data = json.loads(text)
-            if isinstance(data, dict):
-                res = {}
-                for k, v in data.items():
-                    try:
-                        norm_k = "*" if str(k).strip().lower() in ("*", "default", "all") else str(k).strip().lower()
-                        res[norm_k] = int(v)
-                    except (ValueError, TypeError):
-                        pass
-                return res
-        except Exception:
-            pass
-
-    # 3. 键值对拆分
-    res = {}
-    items = re.split(r"[,;]", text)
-    for item in items:
-        item = item.strip()
-        if not item:
-            continue
-        parts = re.split(r"[:=]", item, maxsplit=1)
-        if len(parts) == 2:
-            k, v = parts[0].strip().lower(), parts[1].strip()
-            norm_k = "*" if k in ("*", "default", "all") else k
-            try:
-                res[norm_k] = int(v)
-            except ValueError:
-                pass
-        else:
-            try:
-                res["*"] = int(item)
-            except ValueError:
-                pass
-    return res
-
-
 def resolve_model_quota(
-    model: str,
+    model: str = "",
     quota_raw: str = "",
-    extra_params: dict = None,
     scope_category: str = "",
+    extra_params: dict = None,
 ) -> int:
     """为指定模型解析其实际生效的每日配额上限。
     
-    优先级：
-    1. URL 独立参数（如 quota_muse_video=5 或 quota[muse-video]=5）
-    2. URL quota 参数中该模型的明确指定（如 muse-video:5）
-    3. .env 环境变量模型专属配置（如 MODEL_QUOTA_MUSE_VIDEO=5 或 QUOTA_MUSE_VIDEO=5）
-    4. URL quota 参数中的全局通用限制（如纯数字 "5" 或 "*:5"）
-    5. .env 环境变量业务类别默认配置（如 TEXT2VIDEO_QUOTA / TEXT2IMAGE_QUOTA / DEFAULT_QUOTA）
-    6. 未配置时返回 -1（代表不设限）
+    1. 优先使用 URL 中传入的 quota 纯数字（若传入且为有效非负整数，直接生效）；
+    2. 若未在 URL 传入 quota，检查 .env 中针对该模型的配置（如 QUOTA_MUSE_VIDEO）；
+    3. 检查业务类别默认配置（如 TEXT2IMAGE_QUOTA / TEXT2VIDEO_QUOTA / DEFAULT_QUOTA）；
+    4. 均未配置时返回 -1（代表不设限）。
     """
+    # 1. 优先使用 URL 传入的数字 quota
+    if quota_raw is not None and str(quota_raw).strip() != "":
+        try:
+            return int(str(quota_raw).strip())
+        except (ValueError, TypeError):
+            pass
+
     clean_model = (model or "").strip().lower()
 
-    # 1. 检查 extra_params 单独参数
-    if extra_params and isinstance(extra_params, dict):
-        variants = [
-            f"quota_{clean_model}",
-            f"quota[{clean_model}]",
-            f"quota_{clean_model.replace('-', '_')}",
-            f"quota_{clean_model.replace('_', '-')}",
-        ]
-        for key in variants:
-            for ep_k, ep_v in extra_params.items():
-                if ep_k.strip().lower() == key:
-                    try:
-                        return int(ep_v)
-                    except (TypeError, ValueError):
-                        pass
-
-    # 2. 检查 quota_raw 映射
-    parsed_map = parse_model_quotas(quota_raw)
-    if clean_model in parsed_map:
-        return parsed_map[clean_model]
-    if clean_model.replace("-", "_") in parsed_map:
-        return parsed_map[clean_model.replace("-", "_")]
-    if clean_model.replace("_", "-") in parsed_map:
-        return parsed_map[clean_model.replace("_", "-")]
-
-    candidate_fallback = parsed_map.get("*")
-
-    # 3. 检查 .env 模型专属配置
+    # 2. 检查 .env 环境变量模型专属配置（如 MODEL_QUOTA_XXX 或 QUOTA_XXX）
     try:
         dotenv.load_dotenv(override=True)
     except Exception:
         pass
 
-    env_key = re.sub(r"[^A-Za-z0-9]", "_", clean_model).upper()
-    for env_var in (f"MODEL_QUOTA_{env_key}", f"QUOTA_{env_key}"):
-        env_val = os.getenv(env_var)
-        if env_val is not None:
-            try:
-                return int(env_val)
-            except (ValueError, TypeError):
-                pass
+    if clean_model:
+        env_key = re.sub(r"[^A-Za-z0-9]", "_", clean_model).upper()
+        for env_var in (f"MODEL_QUOTA_{env_key}", f"QUOTA_{env_key}"):
+            env_val = os.getenv(env_var)
+            if env_val is not None:
+                try:
+                    return int(env_val)
+                except (ValueError, TypeError):
+                    pass
 
-    # 4. 如果 URL 中配置了全局通用配额，如 "5"
-    if candidate_fallback is not None:
-        return candidate_fallback
-
-    # 5. 检查业务类别默认配置
+    # 3. 检查业务类别默认配置
     if scope_category == "video":
         for env_var in ("TEXT2VIDEO_QUOTA", "TEXT2VIDEO_DEFAULT_QUOTA"):
             env_val = os.getenv(env_var)
@@ -223,6 +138,7 @@ def get_quota_exceeded_msg(
     model: str = "",
     limit: int = -1,
     used: int = 0,
+    category: str = "",
 ) -> str:
     """获取额度超限时的提示文案，支持多层级覆盖与模板占位符"""
     try:
@@ -237,10 +153,10 @@ def get_quota_exceeded_msg(
     if env_model_key:
         msg = os.getenv(f"QUOTA_EXCEEDED_MSG_{env_model_key}")
 
-    if not msg and scope:
-        if "video" in scope:
+    if not msg:
+        if category == "video" or "video" in scope:
             msg = os.getenv("TEXT2VIDEO_QUOTA_EXCEEDED_MSG")
-        elif "image" in scope:
+        elif category == "image" or "image" in scope:
             msg = os.getenv("TEXT2IMAGE_QUOTA_EXCEEDED_MSG")
 
     if not msg:
@@ -263,12 +179,12 @@ def get_quota_exceeded_msg(
 
 
 async def reserve_generation_quota(
-    open_id: str,
+    union_id: str,
     requested_count: int,
     daily_limit: int,
     scope: str = "default",
 ) -> Tuple[bool, int]:
-    """尝试为指定 open_id 和模型 scope 预约/扣减额度（持久化写入 SQLite，重启不丢失）
+    """尝试为指定 union_id 和模型 scope 预约/扣减额度（持久化写入 SQLite，重启不丢失）
     
     规则：
     1. 若 daily_limit < 0，代表不限额度，直接放行；
@@ -279,7 +195,7 @@ async def reserve_generation_quota(
     if daily_limit < 0:
         return True, 0
 
-    clean_open_id = (open_id or "default").strip()
+    clean_id = (union_id or "default").strip()
     clean_scope = (scope or "default").strip().lower()
 
     today_str = date.today().isoformat()
@@ -291,7 +207,7 @@ async def reserve_generation_quota(
             cur = conn.cursor()
             cur.execute(
                 "SELECT used_count FROM quota_usage WHERE open_id = ? AND date_str = ? AND scope = ?",
-                (clean_open_id, today_str, clean_scope),
+                (clean_id, today_str, clean_scope),
             )
             row = cur.fetchone()
             current_used = row[0] if row else 0
@@ -305,7 +221,7 @@ async def reserve_generation_quota(
                    ON CONFLICT(open_id, date_str, scope) DO UPDATE SET
                        used_count = used_count + excluded.used_count,
                        updated_at = excluded.updated_at""",
-                (clean_open_id, today_str, clean_scope, requested_count, now_str),
+                (clean_id, today_str, clean_scope, requested_count, now_str),
             )
             conn.commit()
             return True, current_used + requested_count
@@ -313,8 +229,8 @@ async def reserve_generation_quota(
             conn.close()
 
 
-async def reset_quota(open_id: str, scope: str = "all") -> int:
-    """重置指定 open_id 的额度使用记录（从 SQLite 删除）
+async def reset_quota(union_id: str, scope: str = "all") -> int:
+    """重置指定 union_id 的额度使用记录（从 SQLite 删除）
     
     参数 scope：
     - "all" 或 "" 或 "*"：重置该用户的所有模型额度
@@ -322,7 +238,7 @@ async def reset_quota(open_id: str, scope: str = "all") -> int:
     - "image"：重置该用户的所有图片模型额度
     - 具体模型名称（如 "muse-video" 或 "zimage"）：精确重置该模型
     """
-    clean_open_id = (open_id or "default").strip()
+    clean_id = (union_id or "default").strip()
     clean_scope = (scope or "all").strip().lower()
 
     with _db_lock:
@@ -330,7 +246,7 @@ async def reset_quota(open_id: str, scope: str = "all") -> int:
         try:
             cur = conn.cursor()
             if clean_scope in ("all", "*", ""):
-                cur.execute("DELETE FROM quota_usage WHERE open_id = ?", (clean_open_id,))
+                cur.execute("DELETE FROM quota_usage WHERE open_id = ?", (clean_id,))
             elif clean_scope == "video":
                 video_models = [
                     m.strip().lower()
@@ -342,7 +258,7 @@ async def reset_quota(open_id: str, scope: str = "all") -> int:
                 placeholders = ",".join("?" for _ in video_models)
                 cur.execute(
                     f"DELETE FROM quota_usage WHERE open_id = ? AND scope IN ({placeholders})",
-                    [clean_open_id] + video_models,
+                    [clean_id] + video_models,
                 )
             elif clean_scope == "image":
                 image_models = [
@@ -355,12 +271,12 @@ async def reset_quota(open_id: str, scope: str = "all") -> int:
                 placeholders = ",".join("?" for _ in image_models)
                 cur.execute(
                     f"DELETE FROM quota_usage WHERE open_id = ? AND scope IN ({placeholders})",
-                    [clean_open_id] + image_models,
+                    [clean_id] + image_models,
                 )
             else:
                 cur.execute(
                     "DELETE FROM quota_usage WHERE open_id = ? AND lower(scope) = lower(?)",
-                    (clean_open_id, clean_scope),
+                    (clean_id, clean_scope),
                 )
 
             deleted_count = cur.rowcount
@@ -370,43 +286,102 @@ async def reset_quota(open_id: str, scope: str = "all") -> int:
             conn.close()
 
 
-async def get_quota_status(open_id: str) -> dict:
-    """获取指定 open_id 当前的使用状态（分模型展示，从 SQLite 读取）"""
-    clean_open_id = (open_id or "default").strip()
+async def get_quota_status(
+    union_id: str = "",
+    page: int = 1,
+    page_size: int = 100,
+) -> dict:
+    """分页获取 union_id 的额度消耗情况，传入 union_id 则进行筛选过滤"""
+    clean_uid = (union_id or "").strip()
+    page = max(1, page)
+    page_size = max(1, page_size)
+    offset = (page - 1) * page_size
     today_str = date.today().isoformat()
 
     with _db_lock:
         conn = sqlite3.connect(DB_PATH, timeout=20.0)
         try:
             cur = conn.cursor()
-            cur.execute(
-                "SELECT date_str, scope, used_count, updated_at FROM quota_usage WHERE open_id = ? ORDER BY date_str DESC, scope ASC",
-                (clean_open_id,),
-            )
-            rows = cur.fetchall()
 
-            usage_map = {}
-            today_usage = {}
-            records = []
-            for r in rows:
-                date_str, scope, used_count, updated_at = r[0], r[1], r[2], r[3]
-                usage_map[f"{date_str}:{scope}"] = used_count
-                if date_str == today_str:
-                    today_usage[scope] = used_count
-                records.append({
-                    "date": date_str,
-                    "scope": scope,
-                    "model": scope,
-                    "used_count": used_count,
-                    "updated_at": updated_at,
+            where_sql = ""
+            params = []
+            if clean_uid:
+                where_sql = "WHERE open_id = ?"
+                params.append(clean_uid)
+
+            count_sql = f"SELECT COUNT(DISTINCT open_id) FROM quota_usage {where_sql}"
+            cur.execute(count_sql, params)
+            total = cur.fetchone()[0]
+
+            page_sql = f"""
+                SELECT open_id, MAX(updated_at) as last_active, SUM(used_count) as total_used
+                FROM quota_usage
+                {where_sql}
+                GROUP BY open_id
+                ORDER BY last_active DESC
+                LIMIT ? OFFSET ?
+            """
+            cur.execute(page_sql, params + [page_size, offset])
+            u_rows = cur.fetchall()
+
+            total_pages = math.ceil(total / page_size) if total > 0 else 1
+            if not u_rows:
+                return {
+                    "page": page,
+                    "page_size": page_size,
+                    "total": total,
+                    "total_pages": total_pages,
+                    "items": [],
+                }
+
+            target_ids = [r[0] for r in u_rows]
+            summary_map = {r[0]: {"last_active": r[1], "total_used": r[2]} for r in u_rows}
+
+            placeholders = ",".join("?" for _ in target_ids)
+            detail_sql = f"""
+                SELECT open_id, date_str, scope, used_count, updated_at
+                FROM quota_usage
+                WHERE open_id IN ({placeholders})
+                ORDER BY date_str DESC, scope ASC
+            """
+            cur.execute(detail_sql, target_ids)
+            detail_rows = cur.fetchall()
+
+            user_records = {uid: [] for uid in target_ids}
+            user_today = {uid: {} for uid in target_ids}
+            user_usage = {uid: {} for uid in target_ids}
+
+            for row in detail_rows:
+                uid, d_str, sc, cnt, u_at = row[0], row[1], row[2], row[3], row[4]
+                user_usage[uid][f"{d_str}:{sc}"] = cnt
+                if d_str == today_str:
+                    user_today[uid][sc] = cnt
+                user_records[uid].append({
+                    "date": d_str,
+                    "model": sc,
+                    "scope": sc,
+                    "used_count": cnt,
+                    "updated_at": u_at,
+                })
+
+            items = []
+            for uid in target_ids:
+                sm = summary_map.get(uid, {})
+                items.append({
+                    "union_id": uid,
+                    "total_used": sm.get("total_used", 0),
+                    "last_active": sm.get("last_active", ""),
+                    "today_usage": user_today.get(uid, {}),
+                    "usage": user_usage.get(uid, {}),
+                    "records": user_records.get(uid, []),
                 })
 
             return {
-                "union_id": clean_open_id,
-                "today": today_str,
-                "today_usage": today_usage,
-                "usage": usage_map,
-                "records": records,
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": total_pages,
+                "items": items,
             }
         finally:
             conn.close()
