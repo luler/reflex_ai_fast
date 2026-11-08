@@ -2209,21 +2209,31 @@ def setup_admin(app: rx.App):
                 status_code=401,
             )
 
-        open_id = req.query_params.get("open_id", "").strip()
-        if not open_id:
+        union_id = req.query_params.get("union_id", "").strip()
+        scope = req.query_params.get("scope", "all").strip().lower()
+        if not union_id and req.method == "POST":
+            try:
+                body = await req.json()
+                if isinstance(body, dict):
+                    union_id = str(body.get("union_id", "")).strip()
+                    if "scope" in body:
+                        scope = str(body.get("scope", "all")).strip().lower()
+            except Exception:
+                pass
+
+        if not union_id:
             return JSONResponse(
-                {"ok": False, "error": "Missing open_id parameter / 缺少必需参数 open_id"},
+                {"ok": False, "error": "Missing union_id parameter / 缺少必需参数 union_id"},
                 status_code=400,
             )
 
-        scope = req.query_params.get("scope", "all").strip().lower()
-        cleared_count = await reset_quota(open_id=open_id, scope=scope)
+        cleared_count = await reset_quota(open_id=union_id, scope=scope)
 
         return JSONResponse(
             {
                 "ok": True,
-                "message": f"open_id [{open_id}] 额度已成功重置",
-                "open_id": open_id,
+                "message": f"union_id [{union_id}] 额度已成功重置",
+                "union_id": union_id,
                 "scope": scope,
                 "cleared_records": cleared_count,
             }
@@ -2236,14 +2246,16 @@ def setup_admin(app: rx.App):
                 status_code=401,
             )
 
-        open_id = req.query_params.get("open_id", "").strip()
-        if not open_id:
+        union_id = req.query_params.get("union_id", "").strip()
+        if not union_id:
             return JSONResponse(
-                {"ok": False, "error": "Missing open_id parameter / 缺少必需参数 open_id"},
+                {"ok": False, "error": "Missing union_id parameter / 缺少必需参数 union_id"},
                 status_code=400,
             )
 
-        status_info = await get_quota_status(open_id=open_id)
+        status_info = await get_quota_status(open_id=union_id)
+        if isinstance(status_info, dict):
+            status_info["union_id"] = union_id
         return JSONResponse({"ok": True, "data": status_info})
 
     app._api.add_route("/admin/api/reset_quota", api_reset_quota, methods=["GET", "POST"])

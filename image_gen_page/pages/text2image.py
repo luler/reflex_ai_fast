@@ -182,7 +182,7 @@ class Text2ImageState(rx.State):
         url_size_options = parse_size_options(get_param("sizes"))
         title = get_param("title").strip()[:60]
         edit = get_param("edit", "0").strip()
-        open_id = get_param("open_id").strip()[:128]
+        open_id = get_param("union_id").strip()[:128]
         quota_raw = get_param("quota").strip()
         extra_quota_params = {
             k.lower(): v[0] if isinstance(v, list) else str(v)

@@ -343,7 +343,7 @@ class Text2VideoState(rx.State):
         url_duration_options = parse_duration_options(get_param("durations"))
         title = get_param("title").strip()[:60]
         edit = get_param("edit").strip()
-        open_id = get_param("open_id").strip()[:128]
+        open_id = get_param("union_id").strip()[:128]
         quota_raw = get_param("quota").strip()
         extra_quota_params = {
             k.lower(): v[0] if isinstance(v, list) else str(v)
